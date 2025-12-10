@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Store,
   LogOut,
+  Globe,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,6 +32,7 @@ const menuItems = [
   { path: '/reports', icon: BarChart3, label: 'التقارير' },
   { path: '/users', icon: Users, label: 'المستخدمين' },
   { path: '/settings', icon: Settings, label: 'الإعدادات' },
+  { path: '/order', icon: Globe, label: 'الطلب أون لاين' },
 ];
 
 export function Sidebar() {

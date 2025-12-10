@@ -23,10 +23,10 @@ interface AppContextType {
 const defaultSettings: StoreSettings = {
   name: 'دُكاني سوبر ماركت',
   nameEn: 'Dokani Supermarket',
-  address: 'شارع الملك فهد، الرياض',
-  phone: '+966 50 123 4567',
+  address: 'الخرطوم، السودان',
+  phone: '+249 912 345 678',
   email: 'info@dokani.com',
-  currency: 'ر.س',
+  currency: 'ج.س',
   taxRate: 15,
   language: 'ar',
   receiptHeader: 'مرحباً بكم في دُكاني',
