@@ -20,6 +20,7 @@ import {
   Truck,
   Building2,
   Warehouse,
+  ShoppingBag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -33,6 +34,7 @@ const menuItems = [
   { path: '/categories', icon: Tag, label: 'التصنيفات' },
   { path: '/inventory', icon: Warehouse, label: 'إدارة المخزون' },
   { path: '/suppliers', icon: Building2, label: 'الموردين' },
+  { path: '/purchases', icon: ShoppingBag, label: 'المشتريات' },
   { path: '/expenses', icon: Wallet, label: 'المصروفات' },
   { path: '/shifts', icon: Clock, label: 'الورديات' },
   { path: '/reports', icon: BarChart3, label: 'التقارير' },
