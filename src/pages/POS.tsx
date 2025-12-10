@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { CartItem, Product } from '@/types';
+import { CartItem, Product, PaymentMethod } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,8 +33,10 @@ import {
   ShoppingCart,
   X,
   Barcode,
+  Printer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ThermalReceipt } from '@/components/receipt/ThermalReceipt';
 
 export default function POS() {
   const {
@@ -56,7 +58,19 @@ export default function POS() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
   const [transactionId, setTransactionId] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [lastInvoice, setLastInvoice] = useState<{
+    items: CartItem[];
+    subtotal: number;
+    discount: number;
+    tax: number;
+    total: number;
+    paymentMethod: PaymentMethod | null;
+    transactionId: string;
+    invoiceNumber: string;
+  } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Calculate totals
   const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
@@ -175,6 +189,19 @@ export default function POS() {
     }
 
     const change = paid - total;
+    const invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
+
+    // Save invoice data for receipt
+    setLastInvoice({
+      items: [...cart],
+      subtotal,
+      discount,
+      tax,
+      total,
+      paymentMethod: method,
+      transactionId,
+      invoiceNumber,
+    });
 
     // Update shift
     if (currentShift) {
@@ -196,12 +223,69 @@ export default function POS() {
       `تم إتمام عملية البيع - ${change > 0 ? `الباقي: ${change.toFixed(2)} ${settings.currency}` : ''}`
     );
 
+    // Show receipt dialog
+    setShowReceipt(true);
+
     // Reset
     setCart([]);
     setShowPaymentDialog(false);
     setSelectedPaymentMethod('');
     setTransactionId('');
     setAmountPaid('');
+  };
+
+  // Print receipt
+  const printReceipt = () => {
+    if (!receiptRef.current) return;
+
+    const printWindow = window.open('', '_blank', 'width=300,height=600');
+    if (!printWindow) {
+      toast.error('تعذر فتح نافذة الطباعة');
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <title>فاتورة - Dokani</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Courier New', monospace;
+              font-size: 12px;
+              width: 80mm;
+              padding: 10px;
+              direction: rtl;
+            }
+            .text-center { text-align: center; }
+            .text-left { text-align: left; }
+            .font-bold { font-weight: bold; }
+            .mb-1 { margin-bottom: 4px; }
+            .mb-2 { margin-bottom: 8px; }
+            .my-2 { margin: 8px 0; }
+            .text-xl { font-size: 18px; }
+            .text-lg { font-size: 16px; }
+            .text-xs { font-size: 10px; }
+            .border-t { border-top: 1px dashed #000; padding-top: 8px; }
+            .border-double { border-top: 2px double #000; }
+            .flex { display: flex; justify-content: space-between; }
+            .item-row { display: flex; justify-content: space-between; padding: 2px 0; }
+          </style>
+        </head>
+        <body>
+          ${receiptRef.current.innerHTML}
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() { window.close(); }
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // Get payment method icon
@@ -592,6 +676,43 @@ export default function POS() {
             >
               <Receipt className="ml-2 h-4 w-4" />
               تأكيد الدفع
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Dialog */}
+      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              الفاتورة
+            </DialogTitle>
+          </DialogHeader>
+          {lastInvoice && (
+            <div className="border rounded-lg overflow-hidden">
+              <ThermalReceipt
+                ref={receiptRef}
+                items={lastInvoice.items}
+                subtotal={lastInvoice.subtotal}
+                discount={lastInvoice.discount}
+                tax={lastInvoice.tax}
+                total={lastInvoice.total}
+                settings={settings}
+                paymentMethod={lastInvoice.paymentMethod}
+                transactionId={lastInvoice.transactionId}
+                invoiceNumber={lastInvoice.invoiceNumber}
+              />
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowReceipt(false)}>
+              إغلاق
+            </Button>
+            <Button onClick={printReceipt}>
+              <Printer className="ml-2 h-4 w-4" />
+              طباعة
             </Button>
           </DialogFooter>
         </DialogContent>
