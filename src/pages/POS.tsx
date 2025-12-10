@@ -315,7 +315,7 @@ export default function POS() {
               يجب فتح وردية قبل البدء في البيع
             </p>
             <Button asChild>
-              <a href="/">العودة للوحة التحكم</a>
+              <a href="/shifts">بدء الوردية</a>
             </Button>
           </CardContent>
         </Card>
