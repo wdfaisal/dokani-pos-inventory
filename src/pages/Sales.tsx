@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { useApp } from '@/contexts/AppContext';
 import { Invoice, CartItem } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -364,8 +363,7 @@ export default function Sales() {
   };
 
   return (
-    <MainLayout>
-      <div className="p-4 md:p-6 space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -761,7 +759,6 @@ export default function Sales() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-    </MainLayout>
+    </div>
   );
 }

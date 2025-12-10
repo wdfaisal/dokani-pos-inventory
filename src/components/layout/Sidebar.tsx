@@ -17,6 +17,7 @@ import {
   Store,
   LogOut,
   Globe,
+  Truck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +26,7 @@ const menuItems = [
   { path: '/', icon: LayoutDashboard, label: 'لوحة التحكم' },
   { path: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
   { path: '/sales', icon: FileText, label: 'المبيعات' },
+  { path: '/online-orders', icon: Truck, label: 'طلبات الأون لاين' },
   { path: '/products', icon: Package, label: 'المنتجات' },
   { path: '/categories', icon: Tag, label: 'التصنيفات' },
   { path: '/inventory', icon: Warehouse, label: 'المخزون' },
