@@ -11,8 +11,22 @@ export interface Product {
   unit: string;
   isWeighted: boolean;
   image?: string;
+  productionDate?: Date;
+  expiryDate?: Date;
+  scaleBarcode?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface Expense {
+  id: string;
+  amount: number;
+  category: string;
+  description: string;
+  reference?: string;
+  shiftId?: string;
+  userId: string;
+  createdAt: Date;
 }
 
 export interface CartItem extends Product {

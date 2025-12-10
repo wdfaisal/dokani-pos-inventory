@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { CartItem, Product, PaymentMethod } from '@/types';
+import { CartItem, Product, PaymentMethod, Expense } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import {
   Search,
@@ -34,9 +42,13 @@ import {
   X,
   Barcode,
   Printer,
+  DollarSign,
+  ScanLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThermalReceipt } from '@/components/receipt/ThermalReceipt';
+
+const expenseCategories = ['رواتب', 'إيجار', 'كهرباء', 'ماء', 'مشتريات', 'صيانة', 'نقل', 'متفرقات'];
 
 export default function POS() {
   const {
@@ -48,6 +60,8 @@ export default function POS() {
     setCurrentShift,
     isFullscreen,
     setIsFullscreen,
+    expenses,
+    setExpenses,
   } = useApp();
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -59,6 +73,9 @@ export default function POS() {
   const [transactionId, setTransactionId] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showExpenseDialog, setShowExpenseDialog] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: '', description: '' });
+  const [barcodeInput, setBarcodeInput] = useState('');
   const [lastInvoice, setLastInvoice] = useState<{
     items: CartItem[];
     subtotal: number;
@@ -71,6 +88,39 @@ export default function POS() {
   } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Barcode scanner handler
+  const handleBarcodeSubmit = useCallback((barcode: string) => {
+    const product = products.find(p => p.barcode === barcode || p.scaleBarcode === barcode);
+    if (product) {
+      addToCart(product);
+      setBarcodeInput('');
+    } else {
+      toast.error('المنتج غير موجود');
+    }
+  }, [products]);
+
+  // Handle expense save
+  const handleSaveExpense = () => {
+    if (!expenseForm.amount || !expenseForm.category) {
+      toast.error('يرجى ملء الحقول المطلوبة');
+      return;
+    }
+    const expense: Expense = {
+      id: Date.now().toString(),
+      amount: parseFloat(expenseForm.amount),
+      category: expenseForm.category,
+      description: expenseForm.description,
+      shiftId: currentShift?.id,
+      userId: '1',
+      createdAt: new Date(),
+    };
+    setExpenses(prev => [expense, ...prev]);
+    toast.success('تم إضافة المصروف');
+    setShowExpenseDialog(false);
+    setExpenseForm({ amount: '', category: '', description: '' });
+  };
 
   // Calculate totals
   const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
@@ -344,7 +394,31 @@ export default function POS() {
               className="pr-10 h-11"
             />
           </div>
+          <div className="relative min-w-[180px]">
+            <ScanLine className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={barcodeInputRef}
+              placeholder="قارئ الباركود"
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && barcodeInput) {
+                  handleBarcodeSubmit(barcodeInput);
+                }
+              }}
+              className="pr-10 h-11"
+            />
+          </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowExpenseDialog(true)}
+              className="h-11"
+            >
+              <DollarSign className="h-4 w-4 ml-1" />
+              مصروف
+            </Button>
             <Button
               variant={inputMode === 'keyboard' ? 'default' : 'outline'}
               size="icon"
@@ -714,6 +788,54 @@ export default function POS() {
               <Printer className="ml-2 h-4 w-4" />
               طباعة
             </Button>
+          </DialogFooter>
+
+      {/* Expense Dialog */}
+      <Dialog open={showExpenseDialog} onOpenChange={setShowExpenseDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>إضافة مصروف</DialogTitle>
+            <DialogDescription>أدخل بيانات المصروف</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>المبلغ *</Label>
+              <Input
+                type="number"
+                value={expenseForm.amount}
+                onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>التصنيف *</Label>
+              <Select
+                value={expenseForm.category}
+                onValueChange={(value) => setExpenseForm({ ...expenseForm, category: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر التصنيف" />
+                </SelectTrigger>
+                <SelectContent>
+                  {expenseCategories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>الوصف</Label>
+              <Textarea
+                value={expenseForm.description}
+                onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                placeholder="وصف المصروف..."
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExpenseDialog(false)}>إلغاء</Button>
+            <Button onClick={handleSaveExpense}>إضافة</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
