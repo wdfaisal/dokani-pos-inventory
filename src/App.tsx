@@ -11,7 +11,8 @@ import Products from "./pages/Products";
 import Settings from "./pages/Settings";
 import Shifts from "./pages/Shifts";
 import Reports from "./pages/Reports";
-import OnlineOrder from "./pages/OnlineOrder";
+import Sales from "./pages/Sales";
+import Store from "./pages/Store";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,18 +24,20 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <MainLayout>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/pos" element={<POS />} />
-              <Route path="/products" element={<Products />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/shifts" element={<Shifts />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/order" element={<OnlineOrder />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </MainLayout>
+          <Routes>
+            {/* External Store Page - No Layout */}
+            <Route path="/store" element={<Store />} />
+            
+            {/* Admin Routes with MainLayout */}
+            <Route path="/" element={<MainLayout><Index /></MainLayout>} />
+            <Route path="/pos" element={<MainLayout><POS /></MainLayout>} />
+            <Route path="/products" element={<MainLayout><Products /></MainLayout>} />
+            <Route path="/settings" element={<MainLayout><Settings /></MainLayout>} />
+            <Route path="/shifts" element={<MainLayout><Shifts /></MainLayout>} />
+            <Route path="/reports" element={<MainLayout><Reports /></MainLayout>} />
+            <Route path="/sales" element={<MainLayout><Sales /></MainLayout>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </AppProvider>

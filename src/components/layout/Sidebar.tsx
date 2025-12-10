@@ -24,15 +24,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: 'لوحة التحكم' },
   { path: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
+  { path: '/sales', icon: FileText, label: 'المبيعات' },
   { path: '/products', icon: Package, label: 'المنتجات' },
   { path: '/categories', icon: Tag, label: 'التصنيفات' },
   { path: '/inventory', icon: Warehouse, label: 'المخزون' },
-  { path: '/invoices', icon: FileText, label: 'الفواتير' },
   { path: '/shifts', icon: Clock, label: 'الورديات' },
   { path: '/reports', icon: BarChart3, label: 'التقارير' },
   { path: '/users', icon: Users, label: 'المستخدمين' },
   { path: '/settings', icon: Settings, label: 'الإعدادات' },
-  { path: '/order', icon: Globe, label: 'الطلب أون لاين' },
 ];
 
 export function Sidebar() {
@@ -118,6 +117,25 @@ export function Sidebar() {
             );
           })}
         </ul>
+
+        {/* External Store Link */}
+        <div className="mt-4 pt-4 border-t border-sidebar-border">
+          {!sidebarCollapsed && (
+            <p className="px-3 mb-2 text-xs text-muted-foreground">روابط خارجية</p>
+          )}
+          <a
+            href="/store"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+              'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+            )}
+          >
+            <Globe className={cn('h-5 w-5 shrink-0', sidebarCollapsed && 'mx-auto')} />
+            {!sidebarCollapsed && <span>متجر العملاء</span>}
+          </a>
+        </div>
       </nav>
 
       {/* User Info */}
