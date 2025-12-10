@@ -789,6 +789,8 @@ export default function POS() {
               طباعة
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Expense Dialog */}
       <Dialog open={showExpenseDialog} onOpenChange={setShowExpenseDialog}>
