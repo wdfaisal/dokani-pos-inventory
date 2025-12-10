@@ -29,7 +29,7 @@ const menuItems = [
   { path: '/online-orders', icon: Truck, label: 'طلبات الأون لاين' },
   { path: '/products', icon: Package, label: 'المنتجات' },
   { path: '/categories', icon: Tag, label: 'التصنيفات' },
-  { path: '/inventory', icon: Warehouse, label: 'المخزون' },
+  { path: '/expenses', icon: Warehouse, label: 'المصروفات' },
   { path: '/shifts', icon: Clock, label: 'الورديات' },
   { path: '/reports', icon: BarChart3, label: 'التقارير' },
   { path: '/users', icon: Users, label: 'المستخدمين' },

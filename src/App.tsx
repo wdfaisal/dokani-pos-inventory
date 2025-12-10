@@ -8,6 +8,8 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
 import POS from "./pages/POS";
 import Products from "./pages/Products";
+import Categories from "./pages/Categories";
+import Expenses from "./pages/Expenses";
 import Settings from "./pages/Settings";
 import Shifts from "./pages/Shifts";
 import Reports from "./pages/Reports";
@@ -33,6 +35,8 @@ const App = () => (
             <Route path="/" element={<MainLayout><Index /></MainLayout>} />
             <Route path="/pos" element={<MainLayout><POS /></MainLayout>} />
             <Route path="/products" element={<MainLayout><Products /></MainLayout>} />
+            <Route path="/categories" element={<MainLayout><Categories /></MainLayout>} />
+            <Route path="/expenses" element={<MainLayout><Expenses /></MainLayout>} />
             <Route path="/settings" element={<MainLayout><Settings /></MainLayout>} />
             <Route path="/shifts" element={<MainLayout><Shifts /></MainLayout>} />
             <Route path="/reports" element={<MainLayout><Reports /></MainLayout>} />

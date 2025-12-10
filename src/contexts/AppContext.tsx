@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { StoreSettings, User, Shift, PaymentMethod, Product, Category } from '@/types';
+import { StoreSettings, User, Shift, PaymentMethod, Product, Category, Expense } from '@/types';
 
 interface AppContextType {
   settings: StoreSettings;
@@ -14,6 +14,8 @@ interface AppContextType {
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   categories: Category[];
   setCategories: React.Dispatch<React.SetStateAction<Category[]>>;
+  expenses: Expense[];
+  setExpenses: React.Dispatch<React.SetStateAction<Expense[]>>;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   isFullscreen: boolean;
@@ -78,6 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(defaultPaymentMethods);
   const [products, setProducts] = useState<Product[]>(sampleProducts);
   const [categories, setCategories] = useState<Category[]>(defaultCategories);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -96,6 +99,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setProducts,
         categories,
         setCategories,
+        expenses,
+        setExpenses,
         sidebarCollapsed,
         setSidebarCollapsed,
         isFullscreen,

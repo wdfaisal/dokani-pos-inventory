@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { Product } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import {
   Search,
   Plus,
@@ -40,8 +41,25 @@ import {
   Package,
   Barcode,
   Filter,
+  RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Generate a random barcode
+const generateBarcode = () => {
+  const prefix = '628';
+  const random = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0');
+  return prefix + random;
+};
+
+// Generate scale barcode (PLU format)
+const generateScaleBarcode = (code: string, price: number) => {
+  const pluCode = code.replace(/\D/g, '').padStart(5, '0').slice(0, 5);
+  const priceStr = Math.round(price * 100).toString().padStart(5, '0').slice(0, 5);
+  const checkDigit = (parseInt(pluCode) + parseInt(priceStr)) % 10;
+  return `20${pluCode}${priceStr}${checkDigit}`;
+};
 
 export default function Products() {
   const { products, setProducts, categories, settings } = useApp();
@@ -61,6 +79,9 @@ export default function Products() {
     category: '',
     unit: 'قطعة',
     isWeighted: false,
+    productionDate: '',
+    expiryDate: '',
+    scaleBarcode: '',
   });
 
   const filteredProducts = products.filter((product) => {
@@ -76,8 +97,8 @@ export default function Products() {
   const resetForm = () => {
     setFormData({
       name: '',
-      barcode: '',
-      code: '',
+      barcode: generateBarcode(),
+      code: `P${Date.now().toString().slice(-4)}`,
       price: '',
       cost: '',
       stock: '',
@@ -85,8 +106,30 @@ export default function Products() {
       category: '',
       unit: 'قطعة',
       isWeighted: false,
+      productionDate: '',
+      expiryDate: '',
+      scaleBarcode: '',
     });
   };
+
+  // Auto-generate barcode when dialog opens for new product
+  useEffect(() => {
+    if (showAddDialog && !editingProduct) {
+      setFormData(prev => ({
+        ...prev,
+        barcode: generateBarcode(),
+        code: `P${Date.now().toString().slice(-4)}`,
+      }));
+    }
+  }, [showAddDialog, editingProduct]);
+
+  // Auto-generate scale barcode when price or code changes for weighted products
+  useEffect(() => {
+    if (formData.isWeighted && formData.code && formData.price) {
+      const scaleBarcode = generateScaleBarcode(formData.code, parseFloat(formData.price) || 0);
+      setFormData(prev => ({ ...prev, scaleBarcode }));
+    }
+  }, [formData.isWeighted, formData.code, formData.price]);
 
   const handleSave = () => {
     if (!formData.name || !formData.price || !formData.category) {
@@ -97,7 +140,7 @@ export default function Products() {
     const productData: Product = {
       id: editingProduct?.id || Date.now().toString(),
       name: formData.name,
-      barcode: formData.barcode || `BAR${Date.now()}`,
+      barcode: formData.barcode || generateBarcode(),
       code: formData.code || `P${Date.now().toString().slice(-4)}`,
       price: parseFloat(formData.price),
       cost: parseFloat(formData.cost) || 0,
@@ -106,6 +149,9 @@ export default function Products() {
       category: formData.category,
       unit: formData.unit,
       isWeighted: formData.isWeighted,
+      productionDate: formData.productionDate ? new Date(formData.productionDate) : undefined,
+      expiryDate: formData.expiryDate ? new Date(formData.expiryDate) : undefined,
+      scaleBarcode: formData.isWeighted ? formData.scaleBarcode : undefined,
       createdAt: editingProduct?.createdAt || new Date(),
       updatedAt: new Date(),
     };
@@ -138,6 +184,9 @@ export default function Products() {
       category: product.category,
       unit: product.unit,
       isWeighted: product.isWeighted,
+      productionDate: product.productionDate ? format(new Date(product.productionDate), 'yyyy-MM-dd') : '',
+      expiryDate: product.expiryDate ? format(new Date(product.expiryDate), 'yyyy-MM-dd') : '',
+      scaleBarcode: product.scaleBarcode || '',
     });
     setShowAddDialog(true);
   };
@@ -145,6 +194,10 @@ export default function Products() {
   const handleDelete = (id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
     toast.success('تم حذف المنتج');
+  };
+
+  const regenerateBarcode = () => {
+    setFormData(prev => ({ ...prev, barcode: generateBarcode() }));
   };
 
   return (
@@ -173,7 +226,7 @@ export default function Products() {
               إضافة منتج
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}
@@ -219,14 +272,26 @@ export default function Products() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="barcode">الباركود</Label>
-                  <Input
-                    id="barcode"
-                    value={formData.barcode}
-                    onChange={(e) =>
-                      setFormData({ ...formData, barcode: e.target.value })
-                    }
-                    placeholder="رقم الباركود"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="barcode"
+                      value={formData.barcode}
+                      onChange={(e) =>
+                        setFormData({ ...formData, barcode: e.target.value })
+                      }
+                      placeholder="رقم الباركود"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={regenerateBarcode}
+                      title="توليد باركود جديد"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="code">كود المنتج</Label>
@@ -294,6 +359,30 @@ export default function Products() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label htmlFor="productionDate">تاريخ الإنتاج</Label>
+                  <Input
+                    id="productionDate"
+                    type="date"
+                    value={formData.productionDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, productionDate: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expiryDate">تاريخ الانتهاء</Label>
+                  <Input
+                    id="expiryDate"
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, expiryDate: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="unit">وحدة القياس</Label>
                   <Select
                     value={formData.unit}
@@ -328,6 +417,24 @@ export default function Products() {
                   </div>
                 </div>
               </div>
+              {formData.isWeighted && (
+                <div className="space-y-2">
+                  <Label htmlFor="scaleBarcode">باركود الميزان (PLU)</Label>
+                  <Input
+                    id="scaleBarcode"
+                    value={formData.scaleBarcode}
+                    onChange={(e) =>
+                      setFormData({ ...formData, scaleBarcode: e.target.value })
+                    }
+                    placeholder="يتم توليده تلقائياً"
+                    readOnly
+                    className="bg-muted"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    يتم توليد باركود الميزان تلقائياً بناءً على كود المنتج والسعر
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -386,6 +493,7 @@ export default function Products() {
                 <TableHead>التصنيف</TableHead>
                 <TableHead>السعر</TableHead>
                 <TableHead>المخزون</TableHead>
+                <TableHead>تاريخ الانتهاء</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead className="text-left">الإجراءات</TableHead>
               </TableRow>
@@ -401,7 +509,7 @@ export default function Products() {
                       <div>
                         <p className="font-medium">{product.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {product.unit}
+                          {product.unit} {product.isWeighted && '(موزون)'}
                         </p>
                       </div>
                     </div>
@@ -415,6 +523,11 @@ export default function Products() {
                       <p className="text-xs text-muted-foreground">
                         {product.code}
                       </p>
+                      {product.scaleBarcode && (
+                        <p className="text-xs text-primary">
+                          PLU: {product.scaleBarcode}
+                        </p>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -433,6 +546,16 @@ export default function Products() {
                     <p className="text-xs text-muted-foreground">
                       حد أدنى: {product.minStock}
                     </p>
+                  </TableCell>
+                  <TableCell>
+                    {product.expiryDate ? (
+                      <div className="flex items-center gap-1 text-xs">
+                        <Calendar className="h-3 w-3" />
+                        {format(new Date(product.expiryDate), 'dd/MM/yyyy')}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {product.stock === 0 ? (
