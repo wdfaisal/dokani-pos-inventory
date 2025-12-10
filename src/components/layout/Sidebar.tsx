@@ -11,13 +11,15 @@ import {
   Clock,
   BarChart3,
   Tag,
-  Warehouse,
+  Wallet,
   ChevronLeft,
   ChevronRight,
   Store,
   LogOut,
   Globe,
   Truck,
+  Building2,
+  Warehouse,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -29,7 +31,9 @@ const menuItems = [
   { path: '/online-orders', icon: Truck, label: 'طلبات الأون لاين' },
   { path: '/products', icon: Package, label: 'المنتجات' },
   { path: '/categories', icon: Tag, label: 'التصنيفات' },
-  { path: '/expenses', icon: Warehouse, label: 'المصروفات' },
+  { path: '/inventory', icon: Warehouse, label: 'إدارة المخزون' },
+  { path: '/suppliers', icon: Building2, label: 'الموردين' },
+  { path: '/expenses', icon: Wallet, label: 'المصروفات' },
   { path: '/shifts', icon: Clock, label: 'الورديات' },
   { path: '/reports', icon: BarChart3, label: 'التقارير' },
   { path: '/users', icon: Users, label: 'المستخدمين' },
