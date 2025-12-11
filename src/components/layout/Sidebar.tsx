@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -26,25 +27,35 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const menuItems = [
-  { path: '/', icon: LayoutDashboard, label: 'لوحة التحكم' },
-  { path: '/pos', icon: ShoppingCart, label: 'نقطة البيع' },
-  { path: '/sales', icon: FileText, label: 'المبيعات' },
-  { path: '/online-orders', icon: Truck, label: 'طلبات الأون لاين' },
-  { path: '/products', icon: Package, label: 'المنتجات' },
-  { path: '/categories', icon: Tag, label: 'التصنيفات' },
-  { path: '/inventory', icon: Warehouse, label: 'إدارة المخزون' },
-  { path: '/suppliers', icon: Building2, label: 'الموردين' },
-  { path: '/purchases', icon: ShoppingBag, label: 'المشتريات' },
-  { path: '/expenses', icon: Wallet, label: 'المصروفات' },
-  { path: '/shifts', icon: Clock, label: 'الورديات' },
-  { path: '/reports', icon: BarChart3, label: 'التقارير' },
-  { path: '/users', icon: Users, label: 'المستخدمين' },
-  { path: '/settings', icon: Settings, label: 'الإعدادات' },
+  { path: '/', icon: LayoutDashboard, label: 'لوحة التحكم', module: 'dashboard' },
+  { path: '/pos', icon: ShoppingCart, label: 'نقطة البيع', module: 'pos' },
+  { path: '/sales', icon: FileText, label: 'المبيعات', module: 'sales' },
+  { path: '/online-orders', icon: Truck, label: 'طلبات الأون لاين', module: 'sales' },
+  { path: '/products', icon: Package, label: 'المنتجات', module: 'products' },
+  { path: '/categories', icon: Tag, label: 'التصنيفات', module: 'categories' },
+  { path: '/inventory', icon: Warehouse, label: 'إدارة المخزون', module: 'inventory' },
+  { path: '/suppliers', icon: Building2, label: 'الموردين', module: 'suppliers' },
+  { path: '/purchases', icon: ShoppingBag, label: 'المشتريات', module: 'purchases' },
+  { path: '/expenses', icon: Wallet, label: 'المصروفات', module: 'expenses' },
+  { path: '/shifts', icon: Clock, label: 'الورديات', module: 'shifts' },
+  { path: '/reports', icon: BarChart3, label: 'التقارير', module: 'reports' },
+  { path: '/users', icon: Users, label: 'المستخدمين', module: 'users' },
+  { path: '/settings', icon: Settings, label: 'الإعدادات', module: 'settings' },
 ];
+
+const roleLabels: Record<string, string> = {
+  admin: 'مدير النظام',
+  accountant: 'محاسب',
+  supervisor: 'مشرف',
+  cashier: 'كاشير',
+};
 
 export function Sidebar() {
   const location = useLocation();
-  const { sidebarCollapsed, setSidebarCollapsed, settings, currentUser } = useApp();
+  const { sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { profile, role, signOut, hasPermission } = useAuth();
+
+  const visibleMenuItems = menuItems.filter(item => hasPermission(item.module, 'view'));
 
   return (
     <aside
@@ -90,7 +101,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
 
@@ -152,18 +163,18 @@ export function Sidebar() {
           <div className="flex items-center gap-3 rounded-lg bg-sidebar-accent/50 p-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
               <span className="text-sm font-bold">
-                {currentUser?.name?.charAt(0) || 'م'}
+                {profile?.full_name?.charAt(0) || profile?.username?.charAt(0) || 'م'}
               </span>
             </div>
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium text-sidebar-foreground">
-                {currentUser?.name || 'مستخدم'}
+                {profile?.full_name || profile?.username || 'مستخدم'}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                {currentUser?.role === 'admin' ? 'مدير النظام' : 'كاشير'}
+                {role ? roleLabels[role] : 'كاشير'}
               </p>
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={signOut}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -172,14 +183,14 @@ export function Sidebar() {
             <TooltipTrigger asChild>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary mx-auto cursor-pointer">
                 <span className="text-sm font-bold">
-                  {currentUser?.name?.charAt(0) || 'م'}
+                  {profile?.full_name?.charAt(0) || profile?.username?.charAt(0) || 'م'}
                 </span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="left">
-              <p className="font-medium">{currentUser?.name}</p>
+              <p className="font-medium">{profile?.full_name || profile?.username}</p>
               <p className="text-xs text-muted-foreground">
-                {currentUser?.role === 'admin' ? 'مدير النظام' : 'كاشير'}
+                {role ? roleLabels[role] : 'كاشير'}
               </p>
             </TooltipContent>
           </Tooltip>
