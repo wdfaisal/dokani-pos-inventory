@@ -33,7 +33,7 @@ interface AuthContextType {
   permissions: Permission[];
   loading: boolean;
   signIn: (emailOrUsername: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, metadata: { username: string; full_name: string; role?: AppRole }) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, metadata: { username: string; full_name: string }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   hasPermission: (module: string, action: 'view' | 'create' | 'edit' | 'delete') => boolean;
 }
@@ -163,11 +163,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (
     email: string,
     password: string,
-    metadata: { username: string; full_name: string; role?: AppRole }
+    metadata: { username: string; full_name: string }
   ) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
+      // Security: Always set role to 'cashier' - admins must promote users via user management
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -176,7 +177,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           data: {
             username: metadata.username,
             full_name: metadata.full_name,
-            role: metadata.role || 'cashier',
           },
         },
       });
