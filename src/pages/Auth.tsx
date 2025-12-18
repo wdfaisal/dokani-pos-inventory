@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 import { useToast } from '@/hooks/use-toast';
 import { Store, User, Lock, Mail, Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -22,7 +22,6 @@ const signupSchema = z.object({
   fullName: z.string().min(2, 'الاسم الكامل مطلوب'),
   password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
   confirmPassword: z.string(),
-  role: z.enum(['admin', 'accountant', 'supervisor', 'cashier']),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'كلمات المرور غير متطابقة',
   path: ['confirmPassword'],
@@ -48,7 +47,6 @@ const Auth = () => {
     fullName: '',
     password: '',
     confirmPassword: '',
-    role: 'cashier' as AppRole,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -122,7 +120,6 @@ const Auth = () => {
     const { error } = await signUp(signupForm.email, signupForm.password, {
       username: signupForm.username,
       full_name: signupForm.fullName,
-      role: signupForm.role,
     });
     setIsLoading(false);
 
@@ -288,24 +285,6 @@ const Auth = () => {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-role">الدور</Label>
-                  <Select
-                    value={signupForm.role}
-                    onValueChange={(value: AppRole) => setSignupForm({ ...signupForm, role: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="اختر الدور" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(roleLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">كلمة المرور</Label>
