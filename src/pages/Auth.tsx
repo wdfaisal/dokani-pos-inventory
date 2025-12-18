@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import { useToast } from '@/hooks/use-toast';
-import { Store, User, Lock, Mail, Loader2 } from 'lucide-react';
+import { Store, User, Lock, Mail, Loader2, Building2 } from 'lucide-react';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -20,6 +20,7 @@ const signupSchema = z.object({
   email: z.string().email('بريد إلكتروني غير صالح'),
   username: z.string().min(3, 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل').regex(/^[a-zA-Z0-9_]+$/, 'اسم المستخدم يجب أن يحتوي على أحرف وأرقام فقط'),
   fullName: z.string().min(2, 'الاسم الكامل مطلوب'),
+  storeName: z.string().min(2, 'اسم المتجر مطلوب'),
   password: z.string().min(6, 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -45,6 +46,7 @@ const Auth = () => {
     email: '',
     username: '',
     fullName: '',
+    storeName: '',
     password: '',
     confirmPassword: '',
   });
@@ -91,7 +93,7 @@ const Auth = () => {
     } else {
       toast({
         title: 'تم تسجيل الدخول',
-        description: 'مرحباً بك في نظام نقاط البيع',
+        description: 'مرحباً بك في نظام دكاني',
       });
       navigate('/');
     }
@@ -120,6 +122,7 @@ const Auth = () => {
     const { error } = await signUp(signupForm.email, signupForm.password, {
       username: signupForm.username,
       full_name: signupForm.fullName,
+      store_name: signupForm.storeName,
     });
     setIsLoading(false);
 
@@ -140,7 +143,7 @@ const Auth = () => {
     } else {
       toast({
         title: 'تم إنشاء الحساب',
-        description: 'تم تسجيل حسابك بنجاح',
+        description: 'تم تسجيل حسابك ومتجرك بنجاح',
       });
       navigate('/');
     }
@@ -155,9 +158,9 @@ const Auth = () => {
   }
 
   const roleLabels: Record<AppRole, string> = {
+    owner: 'مالك',
     admin: 'مدير',
-    accountant: 'محاسب',
-    supervisor: 'مشرف',
+    manager: 'مشرف',
     cashier: 'كاشير',
   };
 
@@ -169,9 +172,9 @@ const Auth = () => {
             <Store className="h-10 w-10 text-primary" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">نظام نقاط البيع</CardTitle>
+            <CardTitle className="text-2xl font-bold">دكاني POS</CardTitle>
             <CardDescription className="mt-2">
-              قم بتسجيل الدخول للوصول إلى لوحة التحكم
+              نظام نقاط البيع السحابي للمتاجر
             </CardDescription>
           </div>
         </CardHeader>
@@ -236,6 +239,24 @@ const Auth = () => {
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="signup-storename">اسم المتجر</Label>
+                  <div className="relative">
+                    <Building2 className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-storename"
+                      type="text"
+                      placeholder="مثال: سوبرماركت النور"
+                      className="pr-10"
+                      value={signupForm.storeName}
+                      onChange={(e) => setSignupForm({ ...signupForm, storeName: e.target.value })}
+                    />
+                  </div>
+                  {errors.storeName && (
+                    <p className="text-sm text-destructive">{errors.storeName}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="signup-email">البريد الإلكتروني</Label>
                   <div className="relative">
                     <Mail className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -253,38 +274,35 @@ const Auth = () => {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-username">اسم المستخدم</Label>
-                  <div className="relative">
-                    <User className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-username">اسم المستخدم</Label>
                     <Input
                       id="signup-username"
                       type="text"
                       placeholder="username"
-                      className="pr-10"
                       value={signupForm.username}
                       onChange={(e) => setSignupForm({ ...signupForm, username: e.target.value })}
                     />
+                    {errors.username && (
+                      <p className="text-sm text-destructive">{errors.username}</p>
+                    )}
                   </div>
-                  {errors.username && (
-                    <p className="text-sm text-destructive">{errors.username}</p>
-                  )}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-fullname">الاسم الكامل</Label>
-                  <Input
-                    id="signup-fullname"
-                    type="text"
-                    placeholder="الاسم الكامل"
-                    value={signupForm.fullName}
-                    onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
-                  />
-                  {errors.fullName && (
-                    <p className="text-sm text-destructive">{errors.fullName}</p>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-fullname">الاسم الكامل</Label>
+                    <Input
+                      id="signup-fullname"
+                      type="text"
+                      placeholder="الاسم الكامل"
+                      value={signupForm.fullName}
+                      onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
+                    />
+                    {errors.fullName && (
+                      <p className="text-sm text-destructive">{errors.fullName}</p>
+                    )}
+                  </div>
                 </div>
-
 
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">كلمة المرور</Label>
@@ -329,9 +347,13 @@ const Auth = () => {
                       جاري إنشاء الحساب...
                     </>
                   ) : (
-                    'إنشاء حساب جديد'
+                    'إنشاء حساب ومتجر جديد'
                   )}
                 </Button>
+
+                <p className="text-xs text-center text-muted-foreground">
+                  بالتسجيل، ستحصل على فترة تجريبية مجانية
+                </p>
               </form>
             </TabsContent>
           </Tabs>
