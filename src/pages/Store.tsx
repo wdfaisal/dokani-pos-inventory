@@ -33,9 +33,9 @@ export default function Store() {
     return products.filter(product => {
       const hasStock = product.stock > 0;
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.barcode.includes(searchQuery) ||
-        product.code.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
+        (product.barcode || '').includes(searchQuery) ||
+        (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
       return hasStock && matchesSearch && matchesCategory;
     });
   }, [products, searchQuery, selectedCategory]);

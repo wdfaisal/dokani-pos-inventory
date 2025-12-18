@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
-import { Shift } from '@/types';
+import { useState, useEffect } from 'react';
+import { useApp, Shift } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -35,105 +35,77 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-
-// Sample shifts history
-const sampleShifts: Shift[] = [
-  {
-    id: '1',
-    userId: '1',
-    userName: 'أحمد محمد',
-    startTime: new Date(Date.now() - 86400000 * 2),
-    endTime: new Date(Date.now() - 86400000 * 2 + 28800000),
-    openingBalance: 500,
-    closingBalance: 1850,
-    expectedBalance: 1820,
-    difference: 30,
-    totalSales: 1420,
-    totalExpenses: 100,
-    cashSales: 1020,
-    cardSales: 300,
-    otherSales: 100,
-    transactionsCount: 45,
-    status: 'closed',
-  },
-  {
-    id: '2',
-    userId: '1',
-    userName: 'أحمد محمد',
-    startTime: new Date(Date.now() - 86400000),
-    endTime: new Date(Date.now() - 86400000 + 32400000),
-    openingBalance: 600,
-    closingBalance: 2150,
-    expectedBalance: 2180,
-    difference: -30,
-    totalSales: 1680,
-    totalExpenses: 100,
-    cashSales: 1280,
-    cardSales: 280,
-    otherSales: 120,
-    transactionsCount: 52,
-    status: 'closed',
-  },
-];
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Shifts() {
-  const { currentShift, setCurrentShift, currentUser, settings } = useApp();
-  const [shifts] = useState<Shift[]>(sampleShifts);
+  const { currentShift, setCurrentShift, openShift, closeShift, settings } = useApp();
+  const { currentStore, user } = useAuth();
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [openingBalance, setOpeningBalance] = useState('');
   const [closingBalance, setClosingBalance] = useState('');
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleOpenShift = () => {
-    const balance = parseFloat(openingBalance) || 0;
-    const newShift: Shift = {
-      id: Date.now().toString(),
-      userId: currentUser?.id || '1',
-      userName: currentUser?.name || 'مستخدم',
-      startTime: new Date(),
-      openingBalance: balance,
-      totalSales: 0,
-      totalExpenses: 0,
-      cashSales: 0,
-      cardSales: 0,
-      otherSales: 0,
-      transactionsCount: 0,
-      status: 'open',
-    };
-    setCurrentShift(newShift);
-    setShowOpenDialog(false);
-    setOpeningBalance('');
-    toast.success('تم فتح الوردية بنجاح');
+  // Fetch shifts history
+  useEffect(() => {
+    if (currentStore) {
+      fetchShifts();
+    }
+  }, [currentStore]);
+
+  const fetchShifts = async () => {
+    if (!currentStore) return;
+
+    const { data, error } = await supabase
+      .from('shifts')
+      .select('*')
+      .eq('store_id', currentStore.id)
+      .eq('status', 'closed')
+      .order('started_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error('Error fetching shifts:', error);
+      return;
+    }
+
+    setShifts(data || []);
   };
 
-  const handleCloseShift = () => {
+  const handleOpenShift = async () => {
+    const balance = parseFloat(openingBalance) || 0;
+    setLoading(true);
+
+    const result = await openShift(balance);
+
+    if (result) {
+      setShowOpenDialog(false);
+      setOpeningBalance('');
+    }
+
+    setLoading(false);
+  };
+
+  const handleCloseShift = async () => {
     if (!currentShift) return;
 
     const closing = parseFloat(closingBalance) || 0;
-    const expected =
-      currentShift.openingBalance +
-      currentShift.cashSales -
-      currentShift.totalExpenses;
-    const difference = closing - expected;
+    setLoading(true);
 
-    setCurrentShift({
-      ...currentShift,
-      endTime: new Date(),
-      closingBalance: closing,
-      expectedBalance: expected,
-      difference,
-      status: 'closed',
-    });
+    await closeShift(closing);
+    await fetchShifts();
+
     setShowCloseDialog(false);
     setClosingBalance('');
-    toast.success('تم إغلاق الوردية بنجاح');
-    setTimeout(() => setCurrentShift(null), 2000);
+    setLoading(false);
   };
 
-  const formatDuration = (start: Date, end?: Date) => {
-    const endTime = end || new Date();
-    const diff = endTime.getTime() - start.getTime();
+  const formatDuration = (startedAt: string, closedAt?: string | null) => {
+    const startTime = new Date(startedAt);
+    const endTime = closedAt ? new Date(closedAt) : new Date();
+    const diff = endTime.getTime() - startTime.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours} ساعة و ${minutes} دقيقة`;
@@ -180,26 +152,26 @@ export default function Shifts() {
                 <DollarSign className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">رصيد البداية</p>
                 <p className="text-xl font-bold">
-                  {currentShift.openingBalance} {settings.currency}
+                  {currentShift.opening_balance} {settings.currency}
                 </p>
               </div>
               <div className="rounded-lg bg-card p-4 text-center border">
                 <TrendingUp className="h-6 w-6 mx-auto mb-2 text-success" />
                 <p className="text-xs text-muted-foreground">إجمالي المبيعات</p>
                 <p className="text-xl font-bold text-success">
-                  {currentShift.totalSales} {settings.currency}
+                  {currentShift.total_sales} {settings.currency}
                 </p>
               </div>
               <div className="rounded-lg bg-card p-4 text-center border">
                 <Receipt className="h-6 w-6 mx-auto mb-2 text-primary" />
                 <p className="text-xs text-muted-foreground">عدد العمليات</p>
-                <p className="text-xl font-bold">{currentShift.transactionsCount}</p>
+                <p className="text-xl font-bold">{currentShift.transactions_count}</p>
               </div>
               <div className="rounded-lg bg-card p-4 text-center border">
                 <Clock className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">مدة الوردية</p>
                 <p className="text-xl font-bold">
-                  {formatDuration(currentShift.startTime)}
+                  {formatDuration(currentShift.started_at)}
                 </p>
               </div>
             </div>
@@ -207,19 +179,19 @@ export default function Shifts() {
               <div className="rounded-lg bg-muted/50 p-3 text-center">
                 <p className="text-xs text-muted-foreground">مبيعات كاش</p>
                 <p className="font-bold">
-                  {currentShift.cashSales} {settings.currency}
+                  {currentShift.cash_sales} {settings.currency}
                 </p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3 text-center">
                 <p className="text-xs text-muted-foreground">مبيعات بطاقة</p>
                 <p className="font-bold">
-                  {currentShift.cardSales} {settings.currency}
+                  {currentShift.card_sales} {settings.currency}
                 </p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3 text-center">
                 <p className="text-xs text-muted-foreground">مبيعات أخرى</p>
                 <p className="font-bold">
-                  {currentShift.otherSales} {settings.currency}
+                  {currentShift.other_sales} {settings.currency}
                 </p>
               </div>
             </div>
@@ -236,7 +208,6 @@ export default function Shifts() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>الموظف</TableHead>
                 <TableHead>تاريخ البداية</TableHead>
                 <TableHead>المدة</TableHead>
                 <TableHead>رصيد البداية</TableHead>
@@ -247,55 +218,56 @@ export default function Shifts() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shifts.map((shift) => (
-                <TableRow
-                  key={shift.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => setSelectedShift(shift)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                        <User className="h-4 w-4 text-primary" />
-                      </div>
-                      <span className="font-medium">{shift.userName}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {format(shift.startTime, 'dd/MM/yyyy HH:mm', { locale: ar })}
-                  </TableCell>
-                  <TableCell>{formatDuration(shift.startTime, shift.endTime)}</TableCell>
-                  <TableCell>
-                    {shift.openingBalance} {settings.currency}
-                  </TableCell>
-                  <TableCell className="text-success font-medium">
-                    {shift.totalSales} {settings.currency}
-                  </TableCell>
-                  <TableCell>
-                    {shift.closingBalance} {settings.currency}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={
-                        shift.difference && shift.difference > 0
-                          ? 'text-success'
-                          : shift.difference && shift.difference < 0
-                          ? 'text-destructive'
-                          : ''
-                      }
-                    >
-                      {shift.difference !== undefined
-                        ? `${shift.difference > 0 ? '+' : ''}${shift.difference} ${settings.currency}`
-                        : '-'}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={shift.status === 'open' ? 'default' : 'secondary'}>
-                      {shift.status === 'open' ? 'مفتوحة' : 'مغلقة'}
-                    </Badge>
+              {shifts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-muted-foreground">لا توجد ورديات سابقة</p>
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                shifts.map((shift) => (
+                  <TableRow
+                    key={shift.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setSelectedShift(shift)}
+                  >
+                    <TableCell>
+                      {format(new Date(shift.started_at), 'dd/MM/yyyy HH:mm', { locale: ar })}
+                    </TableCell>
+                    <TableCell>{formatDuration(shift.started_at, shift.closed_at)}</TableCell>
+                    <TableCell>
+                      {shift.opening_balance} {settings.currency}
+                    </TableCell>
+                    <TableCell className="text-success font-medium">
+                      {shift.total_sales} {settings.currency}
+                    </TableCell>
+                    <TableCell>
+                      {shift.closing_balance} {settings.currency}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          shift.difference && shift.difference > 0
+                            ? 'text-success'
+                            : shift.difference && shift.difference < 0
+                            ? 'text-destructive'
+                            : ''
+                        }
+                      >
+                        {shift.difference !== null
+                          ? `${shift.difference > 0 ? '+' : ''}${shift.difference} ${settings.currency}`
+                          : '-'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={shift.status === 'open' ? 'default' : 'secondary'}>
+                        {shift.status === 'open' ? 'مفتوحة' : 'مغلقة'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -330,9 +302,9 @@ export default function Shifts() {
             <Button variant="outline" onClick={() => setShowOpenDialog(false)}>
               إلغاء
             </Button>
-            <Button onClick={handleOpenShift}>
+            <Button onClick={handleOpenShift} disabled={loading}>
               <Play className="ml-2 h-4 w-4" />
-              فتح الوردية
+              {loading ? 'جاري الفتح...' : 'فتح الوردية'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -351,33 +323,33 @@ export default function Shifts() {
                 <div className="flex justify-between text-sm">
                   <span>رصيد البداية:</span>
                   <span className="font-medium">
-                    {currentShift.openingBalance} {settings.currency}
+                    {currentShift.opening_balance} {settings.currency}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>إجمالي المبيعات:</span>
                   <span className="font-medium text-success">
-                    {currentShift.totalSales} {settings.currency}
+                    {currentShift.total_sales} {settings.currency}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>مبيعات الكاش:</span>
                   <span className="font-medium">
-                    {currentShift.cashSales} {settings.currency}
+                    {currentShift.cash_sales} {settings.currency}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>المصروفات:</span>
                   <span className="font-medium text-destructive">
-                    {currentShift.totalExpenses} {settings.currency}
+                    {currentShift.total_expenses} {settings.currency}
                   </span>
                 </div>
                 <div className="border-t pt-2 flex justify-between text-sm font-bold">
                   <span>الرصيد المتوقع:</span>
                   <span>
-                    {currentShift.openingBalance +
-                      currentShift.cashSales -
-                      currentShift.totalExpenses}{' '}
+                    {currentShift.opening_balance +
+                      currentShift.cash_sales -
+                      currentShift.total_expenses}{' '}
                     {settings.currency}
                   </span>
                 </div>
@@ -402,9 +374,9 @@ export default function Shifts() {
             <Button variant="outline" onClick={() => setShowCloseDialog(false)}>
               إلغاء
             </Button>
-            <Button variant="destructive" onClick={handleCloseShift}>
+            <Button variant="destructive" onClick={handleCloseShift} disabled={loading}>
               <Square className="ml-2 h-4 w-4" />
-              إغلاق الوردية
+              {loading ? 'جاري الإغلاق...' : 'إغلاق الوردية'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -420,25 +392,27 @@ export default function Shifts() {
             <div className="space-y-4 py-4">
               <div className="grid gap-4 grid-cols-2">
                 <div className="rounded-lg bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">الموظف</p>
-                  <p className="font-medium">{selectedShift.userName}</p>
+                  <p className="text-xs text-muted-foreground">تاريخ البداية</p>
+                  <p className="font-medium">
+                    {format(new Date(selectedShift.started_at), 'dd/MM/yyyy HH:mm', { locale: ar })}
+                  </p>
                 </div>
                 <div className="rounded-lg bg-muted p-3">
                   <p className="text-xs text-muted-foreground">المدة</p>
                   <p className="font-medium">
-                    {formatDuration(selectedShift.startTime, selectedShift.endTime)}
+                    {formatDuration(selectedShift.started_at, selectedShift.closed_at)}
                   </p>
                 </div>
                 <div className="rounded-lg bg-muted p-3">
                   <p className="text-xs text-muted-foreground">رصيد البداية</p>
                   <p className="font-medium">
-                    {selectedShift.openingBalance} {settings.currency}
+                    {selectedShift.opening_balance} {settings.currency}
                   </p>
                 </div>
                 <div className="rounded-lg bg-muted p-3">
                   <p className="text-xs text-muted-foreground">رصيد الإغلاق</p>
                   <p className="font-medium">
-                    {selectedShift.closingBalance} {settings.currency}
+                    {selectedShift.closing_balance} {settings.currency}
                   </p>
                 </div>
               </div>
@@ -448,45 +422,45 @@ export default function Shifts() {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">مبيعات كاش</span>
                     <span className="font-medium">
-                      {selectedShift.cashSales} {settings.currency}
+                      {selectedShift.cash_sales} {settings.currency}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">مبيعات بطاقة</span>
                     <span className="font-medium">
-                      {selectedShift.cardSales} {settings.currency}
+                      {selectedShift.card_sales} {settings.currency}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">مبيعات أخرى</span>
                     <span className="font-medium">
-                      {selectedShift.otherSales} {settings.currency}
+                      {selectedShift.other_sales} {settings.currency}
                     </span>
                   </div>
-                  <div className="border-t pt-2 flex justify-between">
+                  <div className="flex justify-between text-sm border-t pt-2">
                     <span className="font-medium">إجمالي المبيعات</span>
                     <span className="font-bold text-success">
-                      {selectedShift.totalSales} {settings.currency}
+                      {selectedShift.total_sales} {settings.currency}
                     </span>
                   </div>
                 </div>
               </div>
               <div className="rounded-lg border p-4 space-y-3">
-                <h4 className="font-medium">حساب الصندوق</h4>
+                <h4 className="font-medium">المصروفات والفارق</h4>
                 <div className="grid gap-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">المصروفات</span>
+                    <span className="font-medium text-destructive">
+                      {selectedShift.total_expenses} {settings.currency}
+                    </span>
+                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">الرصيد المتوقع</span>
                     <span className="font-medium">
-                      {selectedShift.expectedBalance} {settings.currency}
+                      {selectedShift.expected_balance} {settings.currency}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">الرصيد الفعلي</span>
-                    <span className="font-medium">
-                      {selectedShift.closingBalance} {settings.currency}
-                    </span>
-                  </div>
-                  <div className="border-t pt-2 flex justify-between">
+                  <div className="flex justify-between text-sm border-t pt-2">
                     <span className="font-medium">الفارق</span>
                     <span
                       className={`font-bold ${
@@ -497,7 +471,7 @@ export default function Shifts() {
                           : ''
                       }`}
                     >
-                      {selectedShift.difference !== undefined
+                      {selectedShift.difference !== null
                         ? `${selectedShift.difference > 0 ? '+' : ''}${selectedShift.difference} ${settings.currency}`
                         : '-'}
                     </span>

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Product } from '@/types';
+import { Product } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,12 +39,11 @@ import {
   Edit,
   Trash2,
   Package,
-  Barcode,
   Filter,
   RefreshCw,
-  Calendar,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Generate a random barcode
 const generateBarcode = () => {
@@ -53,44 +52,43 @@ const generateBarcode = () => {
   return prefix + random;
 };
 
-// Generate scale barcode (PLU format)
-const generateScaleBarcode = (code: string, price: number) => {
-  const pluCode = code.replace(/\D/g, '').padStart(5, '0').slice(0, 5);
-  const priceStr = Math.round(price * 100).toString().padStart(5, '0').slice(0, 5);
-  const checkDigit = (parseInt(pluCode) + parseInt(priceStr)) % 10;
-  return `20${pluCode}${priceStr}${checkDigit}`;
-};
-
 export default function Products() {
-  const { products, setProducts, categories, settings } = useApp();
+  const { products, categories, settings, refreshProducts } = useApp();
+  const { currentStore } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
     barcode: '',
-    code: '',
+    sku: '',
     price: '',
     cost: '',
     stock: '',
     minStock: '',
-    category: '',
+    category_id: '',
     unit: 'قطعة',
-    isWeighted: false,
-    productionDate: '',
-    expiryDate: '',
-    scaleBarcode: '',
+    is_weighted: false,
+    production_date: '',
+    expiry_date: '',
   });
+
+  const getCategoryName = (categoryId: string | null) => {
+    if (!categoryId) return '-';
+    const category = categories.find(c => c.id === categoryId);
+    return category?.name || '-';
+  };
 
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.name.includes(searchQuery) ||
-      product.barcode.includes(searchQuery) ||
-      product.code.toLowerCase().includes(searchQuery.toLowerCase());
+      (product.barcode || '').includes(searchQuery) ||
+      (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory =
-      selectedCategory === 'all' || product.category === selectedCategory;
+      selectedCategory === 'all' || product.category_id === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -98,17 +96,16 @@ export default function Products() {
     setFormData({
       name: '',
       barcode: generateBarcode(),
-      code: `P${Date.now().toString().slice(-4)}`,
+      sku: `P${Date.now().toString().slice(-4)}`,
       price: '',
       cost: '',
       stock: '',
       minStock: '',
-      category: '',
+      category_id: '',
       unit: 'قطعة',
-      isWeighted: false,
-      productionDate: '',
-      expiryDate: '',
-      scaleBarcode: '',
+      is_weighted: false,
+      production_date: '',
+      expiry_date: '',
     });
   };
 
@@ -118,82 +115,104 @@ export default function Products() {
       setFormData(prev => ({
         ...prev,
         barcode: generateBarcode(),
-        code: `P${Date.now().toString().slice(-4)}`,
+        sku: `P${Date.now().toString().slice(-4)}`,
       }));
     }
   }, [showAddDialog, editingProduct]);
 
-  // Auto-generate scale barcode when price or code changes for weighted products
-  useEffect(() => {
-    if (formData.isWeighted && formData.code && formData.price) {
-      const scaleBarcode = generateScaleBarcode(formData.code, parseFloat(formData.price) || 0);
-      setFormData(prev => ({ ...prev, scaleBarcode }));
-    }
-  }, [formData.isWeighted, formData.code, formData.price]);
-
-  const handleSave = () => {
-    if (!formData.name || !formData.price || !formData.category) {
+  const handleSave = async () => {
+    if (!formData.name || !formData.price || !formData.category_id) {
       toast.error('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    const productData: Product = {
-      id: editingProduct?.id || Date.now().toString(),
-      name: formData.name,
-      barcode: formData.barcode || generateBarcode(),
-      code: formData.code || `P${Date.now().toString().slice(-4)}`,
-      price: parseFloat(formData.price),
-      cost: parseFloat(formData.cost) || 0,
-      stock: parseInt(formData.stock) || 0,
-      minStock: parseInt(formData.minStock) || 5,
-      category: formData.category,
-      unit: formData.unit,
-      isWeighted: formData.isWeighted,
-      productionDate: formData.productionDate ? new Date(formData.productionDate) : undefined,
-      expiryDate: formData.expiryDate ? new Date(formData.expiryDate) : undefined,
-      scaleBarcode: formData.isWeighted ? formData.scaleBarcode : undefined,
-      createdAt: editingProduct?.createdAt || new Date(),
-      updatedAt: new Date(),
-    };
-
-    if (editingProduct) {
-      setProducts((prev) =>
-        prev.map((p) => (p.id === editingProduct.id ? productData : p))
-      );
-      toast.success('تم تعديل المنتج بنجاح');
-    } else {
-      setProducts((prev) => [...prev, productData]);
-      toast.success('تم إضافة المنتج بنجاح');
+    if (!currentStore) {
+      toast.error('لم يتم تحديد المتجر');
+      return;
     }
 
-    setShowAddDialog(false);
-    setEditingProduct(null);
-    resetForm();
+    setSaving(true);
+
+    try {
+      const productData = {
+        name: formData.name,
+        barcode: formData.barcode || generateBarcode(),
+        sku: formData.sku || null,
+        price: parseFloat(formData.price),
+        cost: parseFloat(formData.cost) || 0,
+        stock: parseInt(formData.stock) || 0,
+        min_stock: parseInt(formData.minStock) || 5,
+        category_id: formData.category_id,
+        unit: formData.unit,
+        is_weighted: formData.is_weighted,
+        production_date: formData.production_date || null,
+        expiry_date: formData.expiry_date || null,
+        store_id: currentStore.id,
+      };
+
+      if (editingProduct) {
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editingProduct.id);
+
+        if (error) throw error;
+        toast.success('تم تعديل المنتج بنجاح');
+      } else {
+        const { error } = await supabase
+          .from('products')
+          .insert(productData);
+
+        if (error) throw error;
+        toast.success('تم إضافة المنتج بنجاح');
+      }
+
+      await refreshProducts();
+      setShowAddDialog(false);
+      setEditingProduct(null);
+      resetForm();
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast.error('حدث خطأ أثناء الحفظ');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      barcode: product.barcode,
-      code: product.code,
+      barcode: product.barcode || '',
+      sku: product.sku || '',
       price: product.price.toString(),
       cost: product.cost.toString(),
       stock: product.stock.toString(),
       minStock: product.minStock.toString(),
-      category: product.category,
+      category_id: product.category_id || '',
       unit: product.unit,
-      isWeighted: product.isWeighted,
-      productionDate: product.productionDate ? format(new Date(product.productionDate), 'yyyy-MM-dd') : '',
-      expiryDate: product.expiryDate ? format(new Date(product.expiryDate), 'yyyy-MM-dd') : '',
-      scaleBarcode: product.scaleBarcode || '',
+      is_weighted: product.is_weighted,
+      production_date: product.production_date ? format(new Date(product.production_date), 'yyyy-MM-dd') : '',
+      expiry_date: product.expiry_date ? format(new Date(product.expiry_date), 'yyyy-MM-dd') : '',
     });
     setShowAddDialog(true);
   };
 
-  const handleDelete = (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    toast.success('تم حذف المنتج');
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ is_active: false })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      await refreshProducts();
+      toast.success('تم حذف المنتج');
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast.error('حدث خطأ أثناء الحذف');
+    }
   };
 
   const regenerateBarcode = () => {
@@ -251,9 +270,9 @@ export default function Products() {
                 <div className="space-y-2">
                   <Label htmlFor="category">التصنيف *</Label>
                   <Select
-                    value={formData.category}
+                    value={formData.category_id}
                     onValueChange={(value) =>
-                      setFormData({ ...formData, category: value })
+                      setFormData({ ...formData, category_id: value })
                     }
                   >
                     <SelectTrigger>
@@ -261,7 +280,7 @@ export default function Products() {
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.name}>
+                        <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
                         </SelectItem>
                       ))}
@@ -294,12 +313,12 @@ export default function Products() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="code">كود المنتج</Label>
+                  <Label htmlFor="sku">كود المنتج (SKU)</Label>
                   <Input
-                    id="code"
-                    value={formData.code}
+                    id="sku"
+                    value={formData.sku}
                     onChange={(e) =>
-                      setFormData({ ...formData, code: e.target.value })
+                      setFormData({ ...formData, sku: e.target.value })
                     }
                     placeholder="كود المنتج"
                   />
@@ -359,24 +378,24 @@ export default function Products() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="productionDate">تاريخ الإنتاج</Label>
+                  <Label htmlFor="production_date">تاريخ الإنتاج</Label>
                   <Input
-                    id="productionDate"
+                    id="production_date"
                     type="date"
-                    value={formData.productionDate}
+                    value={formData.production_date}
                     onChange={(e) =>
-                      setFormData({ ...formData, productionDate: e.target.value })
+                      setFormData({ ...formData, production_date: e.target.value })
                     }
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expiryDate">تاريخ الانتهاء</Label>
+                  <Label htmlFor="expiry_date">تاريخ الانتهاء</Label>
                   <Input
-                    id="expiryDate"
+                    id="expiry_date"
                     type="date"
-                    value={formData.expiryDate}
+                    value={formData.expiry_date}
                     onChange={(e) =>
-                      setFormData({ ...formData, expiryDate: e.target.value })
+                      setFormData({ ...formData, expiry_date: e.target.value })
                     }
                   />
                 </div>
@@ -406,9 +425,9 @@ export default function Products() {
                   <Label>منتج موزون</Label>
                   <div className="flex items-center gap-2 h-10">
                     <Switch
-                      checked={formData.isWeighted}
+                      checked={formData.is_weighted}
                       onCheckedChange={(checked) =>
-                        setFormData({ ...formData, isWeighted: checked })
+                        setFormData({ ...formData, is_weighted: checked })
                       }
                     />
                     <span className="text-sm text-muted-foreground">
@@ -417,24 +436,6 @@ export default function Products() {
                   </div>
                 </div>
               </div>
-              {formData.isWeighted && (
-                <div className="space-y-2">
-                  <Label htmlFor="scaleBarcode">باركود الميزان (PLU)</Label>
-                  <Input
-                    id="scaleBarcode"
-                    value={formData.scaleBarcode}
-                    onChange={(e) =>
-                      setFormData({ ...formData, scaleBarcode: e.target.value })
-                    }
-                    placeholder="يتم توليده تلقائياً"
-                    readOnly
-                    className="bg-muted"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    يتم توليد باركود الميزان تلقائياً بناءً على كود المنتج والسعر
-                  </p>
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button
@@ -447,8 +448,8 @@ export default function Products() {
               >
                 إلغاء
               </Button>
-              <Button onClick={handleSave}>
-                {editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج'}
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'جاري الحفظ...' : editingProduct ? 'حفظ التعديلات' : 'إضافة المنتج'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -474,7 +475,7 @@ export default function Products() {
           <SelectContent>
             <SelectItem value="all">كل التصنيفات</SelectItem>
             {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.name}>
+              <SelectItem key={cat.id} value={cat.id}>
                 {cat.name}
               </SelectItem>
             ))}
@@ -489,9 +490,10 @@ export default function Products() {
             <TableHeader>
               <TableRow>
                 <TableHead>المنتج</TableHead>
-                <TableHead>الباركود / الكود</TableHead>
+                <TableHead>الباركود/الكود</TableHead>
                 <TableHead>التصنيف</TableHead>
                 <TableHead>السعر</TableHead>
+                <TableHead>التكلفة</TableHead>
                 <TableHead>المخزون</TableHead>
                 <TableHead>تاريخ الانتهاء</TableHead>
                 <TableHead>الحالة</TableHead>
@@ -499,104 +501,112 @@ export default function Products() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredProducts.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                        <Package className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{product.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {product.unit} {product.isWeighted && '(موزون)'}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-xs">
-                        <Barcode className="h-3 w-3" />
-                        {product.barcode}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {product.code}
-                      </p>
-                      {product.scaleBarcode && (
-                        <p className="text-xs text-primary">
-                          PLU: {product.scaleBarcode}
-                        </p>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{product.category}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <p className="font-medium">
-                      {product.price} {settings.currency}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      تكلفة: {product.cost} {settings.currency}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <p className="font-medium">{product.stock}</p>
-                    <p className="text-xs text-muted-foreground">
-                      حد أدنى: {product.minStock}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    {product.expiryDate ? (
-                      <div className="flex items-center gap-1 text-xs">
-                        <Calendar className="h-3 w-3" />
-                        {format(new Date(product.expiryDate), 'dd/MM/yyyy')}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {product.stock === 0 ? (
-                      <Badge variant="destructive">نفذ</Badge>
-                    ) : product.stock <= product.minStock ? (
-                      <Badge
-                        variant="secondary"
-                        className="bg-warning/10 text-warning"
-                      >
-                        منخفض
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="secondary"
-                        className="bg-success/10 text-success"
-                      >
-                        متوفر
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(product)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive"
-                        onClick={() => handleDelete(product.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+              {filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-muted-foreground">لا توجد منتجات</p>
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredProducts.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                          <Package className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{product.name}</p>
+                          {product.is_weighted && (
+                            <Badge variant="outline" className="text-xs">
+                              موزون
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono text-sm">
+                        {product.barcode || '-'}
+                        {product.sku && (
+                          <p className="text-xs text-muted-foreground">{product.sku}</p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{getCategoryName(product.category_id)}</TableCell>
+                    <TableCell className="font-medium">
+                      {product.price.toFixed(2)} {settings.currency}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {product.cost.toFixed(2)} {settings.currency}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          product.stock === 0
+                            ? 'text-destructive font-bold'
+                            : product.stock <= product.minStock
+                            ? 'text-warning font-bold'
+                            : ''
+                        }
+                      >
+                        {product.stock} {product.unit}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {product.expiry_date ? (
+                        <span
+                          className={
+                            new Date(product.expiry_date) < new Date()
+                              ? 'text-destructive'
+                              : ''
+                          }
+                        >
+                          {format(new Date(product.expiry_date), 'dd/MM/yyyy')}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {product.stock === 0 ? (
+                        <Badge variant="destructive">نفذ</Badge>
+                      ) : product.stock <= product.minStock ? (
+                        <Badge
+                          variant="secondary"
+                          className="bg-warning/10 text-warning"
+                        >
+                          منخفض
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="bg-success/10 text-success">
+                          متوفر
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(product)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          onClick={() => handleDelete(product.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

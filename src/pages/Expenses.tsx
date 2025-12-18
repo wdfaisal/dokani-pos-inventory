@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Expense } from '@/types';
+import { Expense } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -43,6 +43,8 @@ import {
   DollarSign,
   TrendingDown,
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const expenseCategories = [
   'رواتب',
@@ -56,7 +58,8 @@ const expenseCategories = [
 ];
 
 export default function Expenses() {
-  const { expenses, setExpenses, settings, currentShift } = useApp();
+  const { expenses, settings, currentShift, addExpense } = useApp();
+  const { currentStore } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -66,11 +69,12 @@ export default function Expenses() {
     description: '',
     reference: '',
   });
+  const [saving, setSaving] = useState(false);
 
   const filteredExpenses = expenses.filter((expense) => {
     const matchesSearch =
-      expense.description.includes(searchQuery) ||
-      expense.reference?.includes(searchQuery);
+      (expense.description || '').includes(searchQuery) ||
+      (expense.reference || '').includes(searchQuery);
     const matchesCategory =
       selectedCategory === 'all' || expense.category === selectedCategory;
     return matchesSearch && matchesCategory;
@@ -80,7 +84,7 @@ export default function Expenses() {
   const todayExpenses = expenses
     .filter((e) => {
       const today = new Date();
-      const expenseDate = new Date(e.createdAt);
+      const expenseDate = new Date(e.created_at);
       return expenseDate.toDateString() === today.toDateString();
     })
     .reduce((sum, e) => sum + e.amount, 0);
@@ -89,32 +93,47 @@ export default function Expenses() {
     setFormData({ amount: '', category: '', description: '', reference: '' });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.amount || !formData.category) {
       toast.error('يرجى ملء الحقول المطلوبة');
       return;
     }
 
-    const expenseData: Expense = {
-      id: Date.now().toString(),
-      amount: parseFloat(formData.amount),
-      category: formData.category,
-      description: formData.description,
-      reference: formData.reference || undefined,
-      shiftId: currentShift?.id,
-      userId: '1',
-      createdAt: new Date(),
-    };
+    setSaving(true);
 
-    setExpenses((prev) => [expenseData, ...prev]);
-    toast.success('تم إضافة المصروف بنجاح');
-    setShowAddDialog(false);
-    resetForm();
+    try {
+      await addExpense({
+        amount: parseFloat(formData.amount),
+        category: formData.category,
+        description: formData.description || null,
+        reference: formData.reference || null,
+        shift_id: currentShift?.id || null,
+      });
+
+      setShowAddDialog(false);
+      resetForm();
+    } catch (error) {
+      console.error('Error saving expense:', error);
+      toast.error('حدث خطأ أثناء الحفظ');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
-    toast.success('تم حذف المصروف');
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      toast.success('تم حذف المصروف');
+      // Refresh would happen through context
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      toast.error('حدث خطأ أثناء الحذف');
+    }
   };
 
   return (
@@ -198,7 +217,9 @@ export default function Expenses() {
               <Button variant="outline" onClick={() => { setShowAddDialog(false); resetForm(); }}>
                 إلغاء
               </Button>
-              <Button onClick={handleSave}>إضافة المصروف</Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'جاري الحفظ...' : 'إضافة المصروف'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -300,7 +321,7 @@ export default function Expenses() {
                 filteredExpenses.map((expense) => (
                   <TableRow key={expense.id}>
                     <TableCell>
-                      {format(new Date(expense.createdAt), 'dd/MM/yyyy HH:mm', { locale: ar })}
+                      {format(new Date(expense.created_at), 'dd/MM/yyyy HH:mm', { locale: ar })}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{expense.category}</Badge>

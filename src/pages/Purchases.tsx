@@ -26,23 +26,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   Plus, 
   Search, 
-  FileText, 
   Trash2,
   Eye,
   ShoppingCart,
   Building2,
-  Calendar,
-  Receipt,
-  TrendingUp,
   Printer
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useApp } from "@/contexts/AppContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Supplier {
   id: string;
@@ -78,7 +75,8 @@ interface PurchaseInvoice {
 
 const Purchases = () => {
   const { toast } = useToast();
-  const { products, setProducts } = useApp();
+  const { products, refreshProducts, settings } = useApp();
+  const { currentStore, user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -93,43 +91,7 @@ const Purchases = () => {
   ]);
 
   // Sample purchases
-  const [purchases, setPurchases] = useState<PurchaseInvoice[]>([
-    {
-      id: "1",
-      invoiceNumber: "PO-001",
-      supplierId: "1",
-      supplierName: "شركة الأغذية المتحدة",
-      items: [
-        { productId: "1", productName: "حليب طازج", quantity: 50, cost: 5, total: 250 },
-        { productId: "2", productName: "خبز أبيض", quantity: 100, cost: 2, total: 200 },
-      ],
-      subtotal: 450,
-      tax: 67.5,
-      discount: 0,
-      total: 517.5,
-      paidAmount: 517.5,
-      remainingAmount: 0,
-      paymentStatus: 'paid',
-      createdAt: new Date('2024-01-15'),
-    },
-    {
-      id: "2",
-      invoiceNumber: "PO-002",
-      supplierId: "2",
-      supplierName: "مؤسسة المشروبات الحديثة",
-      items: [
-        { productId: "3", productName: "عصير برتقال", quantity: 30, cost: 8, total: 240 },
-      ],
-      subtotal: 240,
-      tax: 36,
-      discount: 10,
-      total: 266,
-      paidAmount: 150,
-      remainingAmount: 116,
-      paymentStatus: 'partial',
-      createdAt: new Date('2024-01-20'),
-    },
-  ]);
+  const [purchases, setPurchases] = useState<PurchaseInvoice[]>([]);
 
   // New invoice form state
   const [selectedSupplier, setSelectedSupplier] = useState("");
@@ -195,12 +157,12 @@ const Purchases = () => {
   const calculateTotals = () => {
     const subtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
     const discount = parseFloat(invoiceDiscount) || 0;
-    const tax = (subtotal - discount) * 0.15;
+    const tax = (subtotal - discount) * (settings.taxRate / 100);
     const total = subtotal - discount + tax;
     return { subtotal, discount, tax, total };
   };
 
-  const handleCreateInvoice = () => {
+  const handleCreateInvoice = async () => {
     if (!selectedSupplier) {
       toast({
         title: "خطأ",
@@ -218,6 +180,8 @@ const Purchases = () => {
       });
       return;
     }
+
+    if (!currentStore || !user) return;
 
     const supplier = suppliers.find(s => s.id === selectedSupplier);
     if (!supplier) return;
@@ -253,13 +217,20 @@ const Purchases = () => {
     setPurchases([newInvoice, ...purchases]);
 
     // Update product stock
-    setProducts(products.map(p => {
-      const invoiceItem = invoiceItems.find(item => item.productId === p.id);
-      if (invoiceItem) {
-        return { ...p, stock: p.stock + invoiceItem.quantity, cost: invoiceItem.cost };
+    for (const item of invoiceItems) {
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        await supabase
+          .from('products')
+          .update({ 
+            stock: product.stock + item.quantity, 
+            cost: item.cost 
+          })
+          .eq('id', item.productId);
       }
-      return p;
-    }));
+    }
+
+    await refreshProducts();
 
     toast({
       title: "تم إنشاء فاتورة الشراء",
@@ -311,10 +282,6 @@ const Purchases = () => {
       default:
         return null;
     }
-  };
-
-  const handlePrint = () => {
-    window.print();
   };
 
   return (
@@ -432,8 +399,8 @@ const Purchases = () => {
                           <TableRow key={item.productId}>
                             <TableCell>{item.productName}</TableCell>
                             <TableCell>{item.quantity}</TableCell>
-                            <TableCell>{item.cost.toFixed(2)} ر.س</TableCell>
-                            <TableCell>{item.total.toFixed(2)} ر.س</TableCell>
+                            <TableCell>{item.cost.toFixed(2)} {settings.currency}</TableCell>
+                            <TableCell>{item.total.toFixed(2)} {settings.currency}</TableCell>
                             <TableCell>
                               <Button
                                 variant="ghost"
@@ -487,63 +454,48 @@ const Purchases = () => {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex justify-between">
                       <span>المجموع الفرعي:</span>
-                      <span>{currentSubtotal.toFixed(2)} ر.س</span>
+                      <span>{currentSubtotal.toFixed(2)} {settings.currency}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>الخصم:</span>
-                      <span>-{currentDiscount.toFixed(2)} ر.س</span>
+                      <span>-{currentDiscount.toFixed(2)} {settings.currency}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground">
-                      <span>الضريبة (15%):</span>
-                      <span>{currentTax.toFixed(2)} ر.س</span>
+                      <span>الضريبة ({settings.taxRate}%):</span>
+                      <span>{currentTax.toFixed(2)} {settings.currency}</span>
                     </div>
                     <div className="border-t pt-3 flex justify-between font-bold text-lg">
                       <span>الإجمالي:</span>
-                      <span>{currentTotal.toFixed(2)} ر.س</span>
-                    </div>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>المتبقي:</span>
-                      <span className={currentTotal - (parseFloat(paidAmount) || 0) > 0 ? "text-orange-500" : "text-green-500"}>
-                        {(currentTotal - (parseFloat(paidAmount) || 0)).toFixed(2)} ر.س
-                      </span>
+                      <span>{currentTotal.toFixed(2)} {settings.currency}</span>
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
-              <Button onClick={handleCreateInvoice} className="w-full" size="lg">
-                <Receipt className="w-4 h-4 ml-2" />
-                إنشاء الفاتورة وتحديث المخزون
-              </Button>
+              <div className="flex justify-end gap-4">
+                <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
+                  إلغاء
+                </Button>
+                <Button onClick={handleCreateInvoice}>
+                  إنشاء الفاتورة
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
-                <FileText className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي الفواتير</p>
-                <p className="text-2xl font-bold">{purchases.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <ShoppingCart className="w-5 h-5 text-blue-500" />
+                <ShoppingCart className="w-5 h-5 text-primary" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">إجمالي المشتريات</p>
-                <p className="text-2xl font-bold">{totalPurchases.toLocaleString()} ر.س</p>
+                <p className="text-2xl font-bold">{totalPurchases.toFixed(2)} {settings.currency}</p>
               </div>
             </div>
           </CardContent>
@@ -552,11 +504,11 @@ const Purchases = () => {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-500/10 rounded-lg">
-                <TrendingUp className="w-5 h-5 text-green-500" />
+                <Building2 className="w-5 h-5 text-green-500" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">المدفوع</p>
-                <p className="text-2xl font-bold">{totalPaid.toLocaleString()} ر.س</p>
+                <p className="text-2xl font-bold">{totalPaid.toFixed(2)} {settings.currency}</p>
               </div>
             </div>
           </CardContent>
@@ -564,12 +516,12 @@ const Purchases = () => {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <Building2 className="w-5 h-5 text-orange-500" />
+              <div className="p-2 bg-red-500/10 rounded-lg">
+                <Building2 className="w-5 h-5 text-red-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">المستحقات</p>
-                <p className="text-2xl font-bold">{totalRemaining.toLocaleString()} ر.س</p>
+                <p className="text-sm text-muted-foreground">المتبقي</p>
+                <p className="text-2xl font-bold">{totalRemaining.toFixed(2)} {settings.currency}</p>
               </div>
             </div>
           </CardContent>
@@ -616,7 +568,6 @@ const Purchases = () => {
                 <TableHead className="text-right">رقم الفاتورة</TableHead>
                 <TableHead className="text-right">المورد</TableHead>
                 <TableHead className="text-right">التاريخ</TableHead>
-                <TableHead className="text-right">عدد الأصناف</TableHead>
                 <TableHead className="text-right">الإجمالي</TableHead>
                 <TableHead className="text-right">المدفوع</TableHead>
                 <TableHead className="text-right">المتبقي</TableHead>
@@ -625,29 +576,36 @@ const Purchases = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPurchases.map((purchase) => (
-                <TableRow key={purchase.id}>
-                  <TableCell className="font-mono font-medium">{purchase.invoiceNumber}</TableCell>
-                  <TableCell>{purchase.supplierName}</TableCell>
-                  <TableCell>{purchase.createdAt.toLocaleDateString('ar-SA')}</TableCell>
-                  <TableCell>{purchase.items.length}</TableCell>
-                  <TableCell>{purchase.total.toFixed(2)} ر.س</TableCell>
-                  <TableCell className="text-green-500">{purchase.paidAmount.toFixed(2)} ر.س</TableCell>
-                  <TableCell className={purchase.remainingAmount > 0 ? "text-orange-500" : ""}>
-                    {purchase.remainingAmount.toFixed(2)} ر.س
-                  </TableCell>
-                  <TableCell>{getStatusBadge(purchase.paymentStatus)}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => viewInvoice(purchase)}
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
+              {filteredPurchases.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8">
+                    <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-muted-foreground">لا توجد فواتير شراء</p>
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredPurchases.map((purchase) => (
+                  <TableRow key={purchase.id}>
+                    <TableCell className="font-medium">{purchase.invoiceNumber}</TableCell>
+                    <TableCell>{purchase.supplierName}</TableCell>
+                    <TableCell>{purchase.createdAt.toLocaleDateString('ar-SA')}</TableCell>
+                    <TableCell>{purchase.total.toFixed(2)} {settings.currency}</TableCell>
+                    <TableCell className="text-green-500">{purchase.paidAmount.toFixed(2)} {settings.currency}</TableCell>
+                    <TableCell className="text-red-500">{purchase.remainingAmount.toFixed(2)} {settings.currency}</TableCell>
+                    <TableCell>{getStatusBadge(purchase.paymentStatus)}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => viewInvoice(purchase)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon">
+                          <Printer className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -657,31 +615,25 @@ const Purchases = () => {
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>تفاصيل الفاتورة</span>
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="w-4 h-4 ml-2" />
-                طباعة
-              </Button>
-            </DialogTitle>
+            <DialogTitle>تفاصيل فاتورة الشراء</DialogTitle>
           </DialogHeader>
           {selectedInvoice && (
-            <div className="space-y-4 print:p-4" id="print-invoice">
-              <div className="grid grid-cols-2 gap-4 pb-4 border-b">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">رقم الفاتورة</p>
-                  <p className="font-bold">{selectedInvoice.invoiceNumber}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">التاريخ</p>
-                  <p>{selectedInvoice.createdAt.toLocaleDateString('ar-SA')}</p>
+                  <p className="font-medium">{selectedInvoice.invoiceNumber}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">المورد</p>
                   <p className="font-medium">{selectedInvoice.supplierName}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">حالة الدفع</p>
+                  <p className="text-sm text-muted-foreground">التاريخ</p>
+                  <p className="font-medium">{selectedInvoice.createdAt.toLocaleDateString('ar-SA')}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">الحالة</p>
                   {getStatusBadge(selectedInvoice.paymentStatus)}
                 </div>
               </div>
@@ -689,59 +641,42 @@ const Purchases = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-right">المنتج</TableHead>
-                    <TableHead className="text-right">الكمية</TableHead>
-                    <TableHead className="text-right">التكلفة</TableHead>
-                    <TableHead className="text-right">الإجمالي</TableHead>
+                    <TableHead>المنتج</TableHead>
+                    <TableHead>الكمية</TableHead>
+                    <TableHead>التكلفة</TableHead>
+                    <TableHead>الإجمالي</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {selectedInvoice.items.map((item, index) => (
-                    <TableRow key={index}>
+                  {selectedInvoice.items.map((item) => (
+                    <TableRow key={item.productId}>
                       <TableCell>{item.productName}</TableCell>
                       <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.cost.toFixed(2)} ر.س</TableCell>
-                      <TableCell>{item.total.toFixed(2)} ر.س</TableCell>
+                      <TableCell>{item.cost.toFixed(2)} {settings.currency}</TableCell>
+                      <TableCell>{item.total.toFixed(2)} {settings.currency}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
 
-              <div className="space-y-2 pt-4 border-t">
+              <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between">
                   <span>المجموع الفرعي:</span>
-                  <span>{selectedInvoice.subtotal.toFixed(2)} ر.س</span>
+                  <span>{selectedInvoice.subtotal.toFixed(2)} {settings.currency}</span>
                 </div>
-                {selectedInvoice.discount > 0 && (
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>الخصم:</span>
-                    <span>-{selectedInvoice.discount.toFixed(2)} ر.س</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-muted-foreground">
-                  <span>الضريبة (15%):</span>
-                  <span>{selectedInvoice.tax.toFixed(2)} ر.س</span>
+                <div className="flex justify-between">
+                  <span>الخصم:</span>
+                  <span>-{selectedInvoice.discount.toFixed(2)} {settings.currency}</span>
                 </div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t">
+                <div className="flex justify-between">
+                  <span>الضريبة:</span>
+                  <span>{selectedInvoice.tax.toFixed(2)} {settings.currency}</span>
+                </div>
+                <div className="flex justify-between font-bold text-lg">
                   <span>الإجمالي:</span>
-                  <span>{selectedInvoice.total.toFixed(2)} ر.س</span>
-                </div>
-                <div className="flex justify-between text-green-500">
-                  <span>المدفوع:</span>
-                  <span>{selectedInvoice.paidAmount.toFixed(2)} ر.س</span>
-                </div>
-                <div className="flex justify-between text-orange-500">
-                  <span>المتبقي:</span>
-                  <span>{selectedInvoice.remainingAmount.toFixed(2)} ر.س</span>
+                  <span>{selectedInvoice.total.toFixed(2)} {settings.currency}</span>
                 </div>
               </div>
-
-              {selectedInvoice.notes && (
-                <div className="pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">ملاحظات</p>
-                  <p>{selectedInvoice.notes}</p>
-                </div>
-              )}
             </div>
           )}
         </DialogContent>

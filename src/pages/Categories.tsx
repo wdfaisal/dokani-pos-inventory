@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Category } from '@/types';
+import { Category } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +17,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, Tag, Search } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const colorOptions = [
   '#8B5CF6', '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#06B6D4',
@@ -24,79 +26,115 @@ const colorOptions = [
 ];
 
 export default function Categories() {
-  const { categories, setCategories, products } = useApp();
+  const { categories, products, refreshCategories } = useApp();
+  const { currentStore } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    nameEn: '',
+    name_en: '',
     icon: 'Tag',
     color: '#8B5CF6',
   });
+  const [saving, setSaving] = useState(false);
 
   const filteredCategories = categories.filter((cat) =>
-    cat.name.includes(searchQuery) || cat.nameEn.toLowerCase().includes(searchQuery.toLowerCase())
+    cat.name.includes(searchQuery) || (cat.name_en || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const resetForm = () => {
-    setFormData({ name: '', nameEn: '', icon: 'Tag', color: '#8B5CF6' });
+    setFormData({ name: '', name_en: '', icon: 'Tag', color: '#8B5CF6' });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name) {
       toast.error('يرجى إدخال اسم التصنيف');
       return;
     }
 
-    const productsCount = products.filter((p) => p.category === formData.name).length;
-
-    const categoryData: Category = {
-      id: editingCategory?.id || Date.now().toString(),
-      name: formData.name,
-      nameEn: formData.nameEn || formData.name,
-      icon: formData.icon,
-      color: formData.color,
-      productsCount: editingCategory?.productsCount || productsCount,
-    };
-
-    if (editingCategory) {
-      setCategories((prev) =>
-        prev.map((c) => (c.id === editingCategory.id ? categoryData : c))
-      );
-      toast.success('تم تعديل التصنيف بنجاح');
-    } else {
-      setCategories((prev) => [...prev, categoryData]);
-      toast.success('تم إضافة التصنيف بنجاح');
+    if (!currentStore) {
+      toast.error('لم يتم تحديد المتجر');
+      return;
     }
 
-    setShowAddDialog(false);
-    setEditingCategory(null);
-    resetForm();
+    setSaving(true);
+
+    try {
+      if (editingCategory) {
+        const { error } = await supabase
+          .from('categories')
+          .update({
+            name: formData.name,
+            name_en: formData.name_en || formData.name,
+            icon: formData.icon,
+            color: formData.color,
+          })
+          .eq('id', editingCategory.id);
+
+        if (error) throw error;
+        toast.success('تم تعديل التصنيف بنجاح');
+      } else {
+        const { error } = await supabase
+          .from('categories')
+          .insert({
+            name: formData.name,
+            name_en: formData.name_en || formData.name,
+            icon: formData.icon,
+            color: formData.color,
+            store_id: currentStore.id,
+          });
+
+        if (error) throw error;
+        toast.success('تم إضافة التصنيف بنجاح');
+      }
+
+      await refreshCategories();
+      setShowAddDialog(false);
+      setEditingCategory(null);
+      resetForm();
+    } catch (error) {
+      console.error('Error saving category:', error);
+      toast.error('حدث خطأ أثناء الحفظ');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
     setFormData({
       name: category.name,
-      nameEn: category.nameEn,
-      icon: category.icon,
-      color: category.color,
+      name_en: category.name_en || '',
+      icon: category.icon || 'Tag',
+      color: category.color || '#8B5CF6',
     });
     setShowAddDialog(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const category = categories.find((c) => c.id === id);
-    const hasProducts = products.some((p) => p.category === category?.name);
+    const hasProducts = products.some((p) => p.category_id === id);
     
     if (hasProducts) {
       toast.error('لا يمكن حذف تصنيف يحتوي على منتجات');
       return;
     }
 
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    toast.success('تم حذف التصنيف');
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      await refreshCategories();
+      toast.success('تم حذف التصنيف');
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      toast.error('حدث خطأ أثناء الحذف');
+    }
   };
 
   return (
@@ -145,11 +183,11 @@ export default function Categories() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="nameEn">الاسم بالإنجليزية</Label>
+                <Label htmlFor="name_en">الاسم بالإنجليزية</Label>
                 <Input
-                  id="nameEn"
-                  value={formData.nameEn}
-                  onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
+                  id="name_en"
+                  value={formData.name_en}
+                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
                   placeholder="Category name in English"
                 />
               </div>
@@ -181,8 +219,8 @@ export default function Categories() {
               >
                 إلغاء
               </Button>
-              <Button onClick={handleSave}>
-                {editingCategory ? 'حفظ التعديلات' : 'إضافة التصنيف'}
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'جاري الحفظ...' : editingCategory ? 'حفظ التعديلات' : 'إضافة التصنيف'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -203,26 +241,26 @@ export default function Categories() {
       {/* Categories Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredCategories.map((category) => {
-          const categoryProductsCount = products.filter((p) => p.category === category.name).length;
+          const categoryProductsCount = products.filter((p) => p.category_id === category.id).length;
           
           return (
             <Card key={category.id} className="group relative overflow-hidden">
               <div
                 className="absolute inset-x-0 top-0 h-1"
-                style={{ backgroundColor: category.color }}
+                style={{ backgroundColor: category.color || '#8B5CF6' }}
               />
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-12 w-12 items-center justify-center rounded-lg"
-                      style={{ backgroundColor: `${category.color}20` }}
+                      style={{ backgroundColor: `${category.color || '#8B5CF6'}20` }}
                     >
-                      <Tag className="h-6 w-6" style={{ color: category.color }} />
+                      <Tag className="h-6 w-6" style={{ color: category.color || '#8B5CF6' }} />
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{category.name}</h3>
-                      <p className="text-sm text-muted-foreground">{category.nameEn}</p>
+                      <p className="text-sm text-muted-foreground">{category.name_en || ''}</p>
                     </div>
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, PaymentMethod } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,60 +27,120 @@ import {
   Banknote,
   Smartphone,
 } from 'lucide-react';
-import { PaymentMethod } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Settings() {
-  const { settings, setSettings, paymentMethods, setPaymentMethods } = useApp();
+  const { settings, paymentMethods, refreshPaymentMethods } = useApp();
+  const { currentStore } = useAuth();
   const [localSettings, setLocalSettings] = useState(settings);
   const [newPaymentMethod, setNewPaymentMethod] = useState({
     name: '',
-    nameEn: '',
+    name_en: '',
     icon: 'CreditCard',
-    requiresTransactionId: true,
+    requires_reference: true,
   });
+  const [saving, setSaving] = useState(false);
 
-  const handleSaveSettings = () => {
-    setSettings(localSettings);
-    toast.success('تم حفظ الإعدادات بنجاح');
+  const handleSaveSettings = async () => {
+    if (!currentStore) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('stores')
+        .update({
+          name: localSettings.name,
+          name_en: localSettings.nameEn,
+          address: localSettings.address,
+          phone: localSettings.phone,
+          email: localSettings.email,
+          tax_number: localSettings.taxNumber,
+          currency: localSettings.currency,
+          tax_rate: localSettings.taxRate,
+        })
+        .eq('id', currentStore.id);
+
+      if (error) throw error;
+      toast.success('تم حفظ الإعدادات بنجاح');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast.error('حدث خطأ أثناء الحفظ');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleAddPaymentMethod = () => {
+  const handleAddPaymentMethod = async () => {
     if (!newPaymentMethod.name) {
       toast.error('يرجى إدخال اسم طريقة الدفع');
       return;
     }
 
-    const method: PaymentMethod = {
-      id: Date.now().toString(),
-      name: newPaymentMethod.name,
-      nameEn: newPaymentMethod.nameEn || newPaymentMethod.name,
-      icon: newPaymentMethod.icon,
-      isActive: true,
-      requiresTransactionId: newPaymentMethod.requiresTransactionId,
-    };
+    if (!currentStore) return;
 
-    setPaymentMethods((prev) => [...prev, method]);
-    setNewPaymentMethod({
-      name: '',
-      nameEn: '',
-      icon: 'CreditCard',
-      requiresTransactionId: true,
-    });
-    toast.success('تم إضافة طريقة الدفع');
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .insert({
+          name: newPaymentMethod.name,
+          name_en: newPaymentMethod.name_en || newPaymentMethod.name,
+          icon: newPaymentMethod.icon,
+          is_active: true,
+          requires_reference: newPaymentMethod.requires_reference,
+          store_id: currentStore.id,
+        });
+
+      if (error) throw error;
+
+      await refreshPaymentMethods();
+      setNewPaymentMethod({
+        name: '',
+        name_en: '',
+        icon: 'CreditCard',
+        requires_reference: true,
+      });
+      toast.success('تم إضافة طريقة الدفع');
+    } catch (error) {
+      console.error('Error adding payment method:', error);
+      toast.error('حدث خطأ أثناء الإضافة');
+    }
   };
 
-  const handleDeletePaymentMethod = (id: string) => {
-    setPaymentMethods((prev) => prev.filter((m) => m.id !== id));
-    toast.success('تم حذف طريقة الدفع');
+  const handleDeletePaymentMethod = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      await refreshPaymentMethods();
+      toast.success('تم حذف طريقة الدفع');
+    } catch (error) {
+      console.error('Error deleting payment method:', error);
+      toast.error('حدث خطأ أثناء الحذف');
+    }
   };
 
-  const handleTogglePaymentMethod = (id: string) => {
-    setPaymentMethods((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, isActive: !m.isActive } : m))
-    );
+  const handleTogglePaymentMethod = async (id: string, isActive: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .update({ is_active: !isActive })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      await refreshPaymentMethods();
+    } catch (error) {
+      console.error('Error toggling payment method:', error);
+      toast.error('حدث خطأ');
+    }
   };
 
-  const getPaymentIcon = (iconName: string) => {
+  const getPaymentIcon = (iconName: string | null) => {
     switch (iconName) {
       case 'Banknote':
         return Banknote;
@@ -216,17 +276,17 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ر.س">ريال سعودي (ر.س)</SelectItem>
-                      <SelectItem value="ج.م">جنيه مصري (ج.م)</SelectItem>
-                      <SelectItem value="د.إ">درهم إماراتي (د.إ)</SelectItem>
-                      <SelectItem value="د.ك">دينار كويتي (د.ك)</SelectItem>
+                      <SelectItem value="SAR">ريال سعودي (SAR)</SelectItem>
+                      <SelectItem value="EGP">جنيه مصري (EGP)</SelectItem>
+                      <SelectItem value="AED">درهم إماراتي (AED)</SelectItem>
+                      <SelectItem value="KWD">دينار كويتي (KWD)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <Button onClick={handleSaveSettings}>
+              <Button onClick={handleSaveSettings} disabled={saving}>
                 <Save className="ml-2 h-4 w-4" />
-                حفظ التغييرات
+                {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
               </Button>
             </CardContent>
           </Card>
@@ -302,9 +362,9 @@ export default function Settings() {
                   }
                 />
               </div>
-              <Button onClick={handleSaveSettings}>
+              <Button onClick={handleSaveSettings} disabled={saving}>
                 <Save className="ml-2 h-4 w-4" />
-                حفظ التغييرات
+                {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
               </Button>
             </CardContent>
           </Card>
@@ -333,7 +393,7 @@ export default function Settings() {
                         <div>
                           <p className="font-medium">{method.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {method.requiresTransactionId
+                            {method.requires_reference
                               ? 'يتطلب رقم العملية'
                               : 'لا يتطلب رقم العملية'}
                           </p>
@@ -341,8 +401,8 @@ export default function Settings() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Switch
-                          checked={method.isActive}
-                          onCheckedChange={() => handleTogglePaymentMethod(method.id)}
+                          checked={method.is_active}
+                          onCheckedChange={() => handleTogglePaymentMethod(method.id, method.is_active)}
                         />
                         <Button
                           variant="ghost"
@@ -381,11 +441,11 @@ export default function Settings() {
                   <div className="space-y-2">
                     <Label>الاسم (إنجليزي)</Label>
                     <Input
-                      value={newPaymentMethod.nameEn}
+                      value={newPaymentMethod.name_en}
                       onChange={(e) =>
                         setNewPaymentMethod({
                           ...newPaymentMethod,
-                          nameEn: e.target.value,
+                          name_en: e.target.value,
                         })
                       }
                       placeholder="Bank Transfer"
@@ -414,11 +474,11 @@ export default function Settings() {
                   <div className="flex items-end">
                     <div className="flex items-center gap-2">
                       <Switch
-                        checked={newPaymentMethod.requiresTransactionId}
+                        checked={newPaymentMethod.requires_reference}
                         onCheckedChange={(checked) =>
                           setNewPaymentMethod({
                             ...newPaymentMethod,
-                            requiresTransactionId: checked,
+                            requires_reference: checked,
                           })
                         }
                       />
@@ -461,16 +521,13 @@ export default function Settings() {
                 <div>
                   <p className="font-medium">معلومات العميل</p>
                   <p className="text-sm text-muted-foreground">
-                    طلب بيانات العميل عند إنشاء الفاتورة
+                    طلب اسم ورقم هاتف العميل عند البيع
                   </p>
                 </div>
                 <Switch
                   checked={localSettings.enableCustomerInfo}
                   onCheckedChange={(checked) =>
-                    setLocalSettings({
-                      ...localSettings,
-                      enableCustomerInfo: checked,
-                    })
+                    setLocalSettings({ ...localSettings, enableCustomerInfo: checked })
                   }
                 />
               </div>
@@ -486,12 +543,11 @@ export default function Settings() {
                       lowStockThreshold: parseInt(e.target.value) || 10,
                     })
                   }
-                  className="max-w-[200px]"
                 />
               </div>
-              <Button onClick={handleSaveSettings}>
+              <Button onClick={handleSaveSettings} disabled={saving}>
                 <Save className="ml-2 h-4 w-4" />
-                حفظ التغييرات
+                {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
               </Button>
             </CardContent>
           </Card>
@@ -502,7 +558,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>إعدادات اللغة</CardTitle>
-              <CardDescription>تغيير لغة واجهة النظام</CardDescription>
+              <CardDescription>تخصيص لغة واجهة النظام</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -513,7 +569,7 @@ export default function Settings() {
                     setLocalSettings({ ...localSettings, language: value })
                   }
                 >
-                  <SelectTrigger className="max-w-[250px]">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -522,9 +578,9 @@ export default function Settings() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleSaveSettings}>
+              <Button onClick={handleSaveSettings} disabled={saving}>
                 <Save className="ml-2 h-4 w-4" />
-                حفظ التغييرات
+                {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
               </Button>
             </CardContent>
           </Card>
