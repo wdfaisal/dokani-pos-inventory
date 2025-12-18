@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -32,14 +31,12 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   Users as UsersIcon,
-  Plus,
   Search,
   Edit2,
   Shield,
   UserCheck,
   UserX,
   Crown,
-  Calculator,
   Eye,
   Store,
 } from 'lucide-react';
@@ -57,28 +54,28 @@ interface UserWithRole {
 }
 
 const roleLabels: Record<AppRole, string> = {
+  owner: 'مالك',
   admin: 'مدير',
-  accountant: 'محاسب',
-  supervisor: 'مشرف',
+  manager: 'مشرف',
   cashier: 'كاشير',
 };
 
 const roleIcons: Record<AppRole, React.ReactNode> = {
-  admin: <Crown className="h-4 w-4" />,
-  accountant: <Calculator className="h-4 w-4" />,
-  supervisor: <Eye className="h-4 w-4" />,
+  owner: <Crown className="h-4 w-4" />,
+  admin: <Shield className="h-4 w-4" />,
+  manager: <Eye className="h-4 w-4" />,
   cashier: <Store className="h-4 w-4" />,
 };
 
 const roleColors: Record<AppRole, string> = {
+  owner: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   admin: 'bg-red-500/10 text-red-600 border-red-500/20',
-  accountant: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  supervisor: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
+  manager: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
   cashier: 'bg-green-500/10 text-green-600 border-green-500/20',
 };
 
 const Users = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, currentStore } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,34 +85,62 @@ const Users = () => {
   const [selectedUser, setSelectedUser] = useState<UserWithRole | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (currentStore) {
+      fetchUsers();
+    }
+  }, [currentStore]);
 
   const fetchUsers = async () => {
+    if (!currentStore) return;
+    
     try {
       setLoading(true);
       
-      // Fetch profiles
+      // Fetch store members with profiles
+      const { data: members, error: membersError } = await supabase
+        .from('store_members')
+        .select('user_id, role, is_active')
+        .eq('store_id', currentStore.id);
+
+      if (membersError) throw membersError;
+
+      // Get owner info
+      const { data: ownerProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', currentStore.owner_id)
+        .maybeSingle();
+
+      // Fetch profiles for members
+      const memberUserIds = members?.map(m => m.user_id) || [];
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('*');
+        .select('*')
+        .in('user_id', [...memberUserIds, currentStore.owner_id]);
 
       if (profilesError) throw profilesError;
 
-      // Fetch roles
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('*');
-
-      if (rolesError) throw rolesError;
-
       // Combine data
-      const usersWithRoles: UserWithRole[] = (profiles || []).map((profile: any) => {
-        const userRole = roles?.find((r: any) => r.user_id === profile.user_id);
-        return {
-          ...profile,
-          role: userRole?.role || 'cashier',
-        };
+      const usersWithRoles: UserWithRole[] = [];
+      
+      // Add owner first
+      if (ownerProfile) {
+        usersWithRoles.push({
+          ...ownerProfile,
+          role: 'owner' as AppRole,
+        });
+      }
+
+      // Add members
+      members?.forEach(member => {
+        const profile = profiles?.find(p => p.user_id === member.user_id);
+        if (profile && profile.user_id !== currentStore.owner_id) {
+          usersWithRoles.push({
+            ...profile,
+            role: member.role as AppRole,
+            is_active: member.is_active,
+          });
+        }
       });
 
       setUsers(usersWithRoles);
@@ -132,7 +157,7 @@ const Users = () => {
   };
 
   const handleUpdateUser = async () => {
-    if (!selectedUser) return;
+    if (!selectedUser || !currentStore) return;
 
     try {
       // Update profile
@@ -141,19 +166,21 @@ const Users = () => {
         .update({
           full_name: selectedUser.full_name,
           phone: selectedUser.phone,
-          is_active: selectedUser.is_active,
         })
         .eq('id', selectedUser.id);
 
       if (profileError) throw profileError;
 
-      // Update role
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .update({ role: selectedUser.role })
-        .eq('user_id', selectedUser.user_id);
+      // Update role in store_members (not for owner)
+      if (selectedUser.role !== 'owner') {
+        const { error: roleError } = await supabase
+          .from('store_members')
+          .update({ role: selectedUser.role, is_active: selectedUser.is_active })
+          .eq('store_id', currentStore.id)
+          .eq('user_id', selectedUser.user_id);
 
-      if (roleError) throw roleError;
+        if (roleError) throw roleError;
+      }
 
       toast({
         title: 'تم التحديث',
@@ -173,11 +200,14 @@ const Users = () => {
   };
 
   const toggleUserStatus = async (user: UserWithRole) => {
+    if (!currentStore || user.role === 'owner') return;
+    
     try {
       const { error } = await supabase
-        .from('profiles')
+        .from('store_members')
         .update({ is_active: !user.is_active })
-        .eq('id', user.id);
+        .eq('store_id', currentStore.id)
+        .eq('user_id', user.user_id);
 
       if (error) throw error;
 
@@ -209,7 +239,7 @@ const Users = () => {
   const stats = {
     total: users.length,
     active: users.filter((u) => u.is_active).length,
-    admins: users.filter((u) => u.role === 'admin').length,
+    admins: users.filter((u) => u.role === 'admin' || u.role === 'owner').length,
     cashiers: users.filter((u) => u.role === 'cashier').length,
   };
 
@@ -360,30 +390,30 @@ const Users = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        {hasPermission('users', 'edit') && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setEditDialogOpen(true);
-                            }}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {hasPermission('users', 'edit') && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleUserStatus(user)}
-                          >
-                            {user.is_active ? (
-                              <UserX className="h-4 w-4 text-destructive" />
-                            ) : (
-                              <UserCheck className="h-4 w-4 text-green-500" />
-                            )}
-                          </Button>
+                        {hasPermission('users', 'edit') && user.role !== 'owner' && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setEditDialogOpen(true);
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleUserStatus(user)}
+                            >
+                              {user.is_active ? (
+                                <UserX className="h-4 w-4 text-destructive" />
+                              ) : (
+                                <UserCheck className="h-4 w-4 text-green-500" />
+                              )}
+                            </Button>
+                          </>
                         )}
                       </div>
                     </TableCell>
@@ -433,11 +463,13 @@ const Users = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(roleLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
+                    {Object.entries(roleLabels)
+                      .filter(([value]) => value !== 'owner')
+                      .map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
