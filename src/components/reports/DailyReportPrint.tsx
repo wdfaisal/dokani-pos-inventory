@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { StoreSettings, Shift } from '@/types';
+import { StoreSettings, Shift } from '@/contexts/AppContext';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
@@ -114,21 +114,17 @@ export const DailyReportPrint = forwardRef<HTMLDivElement, DailyReportPrintProps
             <div className="mb-2 pb-2 border-b border-dashed border-black">
               <div className="font-bold mb-1">معلومات الوردية</div>
               <div className="flex justify-between">
-                <span>الكاشير:</span>
-                <span>{data.shift.userName}</span>
-              </div>
-              <div className="flex justify-between">
                 <span>بداية الوردية:</span>
-                <span>{format(new Date(data.shift.startTime), 'HH:mm', { locale: ar })}</span>
+                <span>{format(new Date(data.shift.started_at), 'HH:mm', { locale: ar })}</span>
               </div>
               <div className="flex justify-between">
                 <span>رصيد الافتتاح:</span>
-                <span>{data.shift.openingBalance} {settings.currency}</span>
+                <span>{data.shift.opening_balance} {settings.currency}</span>
               </div>
-              {data.shift.closingBalance && (
+              {data.shift.closing_balance && (
                 <div className="flex justify-between">
                   <span>رصيد الإغلاق:</span>
-                  <span>{data.shift.closingBalance} {settings.currency}</span>
+                  <span>{data.shift.closing_balance} {settings.currency}</span>
                 </div>
               )}
             </div>
@@ -268,24 +264,24 @@ export const DailyReportPrint = forwardRef<HTMLDivElement, DailyReportPrintProps
             <h3 className="font-bold text-lg mb-4 border-b pb-2">معلومات الوردية</h3>
             <div className="grid grid-cols-4 gap-4">
               <div>
-                <div className="text-gray-600 text-sm">الكاشير</div>
-                <div className="font-bold">{data.shift.userName}</div>
-              </div>
-              <div>
                 <div className="text-gray-600 text-sm">بداية الوردية</div>
                 <div className="font-bold">
-                  {format(new Date(data.shift.startTime), 'HH:mm', { locale: ar })}
+                  {format(new Date(data.shift.started_at), 'HH:mm', { locale: ar })}
                 </div>
               </div>
               <div>
                 <div className="text-gray-600 text-sm">رصيد الافتتاح</div>
                 <div className="font-bold">
-                  {data.shift.openingBalance} {settings.currency}
+                  {data.shift.opening_balance} {settings.currency}
                 </div>
               </div>
               <div>
                 <div className="text-gray-600 text-sm">عدد المعاملات</div>
-                <div className="font-bold">{data.shift.transactionsCount}</div>
+                <div className="font-bold">{data.shift.transactions_count}</div>
+              </div>
+              <div>
+                <div className="text-gray-600 text-sm">إجمالي المبيعات</div>
+                <div className="font-bold">{data.shift.total_sales} {settings.currency}</div>
               </div>
             </div>
           </div>

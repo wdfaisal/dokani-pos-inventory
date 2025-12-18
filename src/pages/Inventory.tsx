@@ -36,12 +36,12 @@ import {
   ArrowDownCircle, 
   AlertTriangle,
   TrendingUp,
-  TrendingDown,
   RotateCcw,
-  FileText
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useApp } from "@/contexts/AppContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface StockMovement {
   id: string;
@@ -59,7 +59,8 @@ interface StockMovement {
 
 const Inventory = () => {
   const { toast } = useToast();
-  const { products, setProducts } = useApp();
+  const { products, refreshProducts, categories } = useApp();
+  const { currentStore, user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStock, setFilterStock] = useState<'all' | 'low' | 'out'>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -69,34 +70,9 @@ const Inventory = () => {
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
 
-  const [movements, setMovements] = useState<StockMovement[]>([
-    {
-      id: "1",
-      productId: "1",
-      productName: "حليب طازج",
-      type: "in",
-      quantity: 50,
-      previousStock: 100,
-      newStock: 150,
-      reference: "PO-001",
-      userId: "1",
-      createdAt: new Date(),
-    },
-    {
-      id: "2",
-      productId: "2",
-      productName: "خبز أبيض",
-      type: "out",
-      quantity: 20,
-      previousStock: 80,
-      newStock: 60,
-      notes: "تالف",
-      userId: "1",
-      createdAt: new Date(),
-    },
-  ]);
+  const [movements, setMovements] = useState<StockMovement[]>([]);
 
-  const handleStockMovement = () => {
+  const handleStockMovement = async () => {
     if (!selectedProduct || !quantity) {
       toast({
         title: "خطأ",
@@ -107,7 +83,7 @@ const Inventory = () => {
     }
 
     const product = products.find(p => p.id === selectedProduct);
-    if (!product) return;
+    if (!product || !currentStore || !user) return;
 
     const qty = parseInt(quantity);
     if (isNaN(qty) || qty <= 0) {
@@ -136,43 +112,76 @@ const Inventory = () => {
       newStock = qty;
     }
 
-    // Update product stock
-    setProducts(products.map(p => 
-      p.id === selectedProduct ? { ...p, stock: newStock } : p
-    ));
+    try {
+      // Update product stock
+      await supabase
+        .from('products')
+        .update({ stock: newStock })
+        .eq('id', selectedProduct);
 
-    // Add movement record
-    const movement: StockMovement = {
-      id: Date.now().toString(),
-      productId: selectedProduct,
-      productName: product.name,
-      type: movementType,
-      quantity: qty,
-      previousStock: product.stock,
-      newStock,
-      reference,
-      notes,
-      userId: "1",
-      createdAt: new Date(),
-    };
-    setMovements([movement, ...movements]);
+      // Add inventory transaction
+      await supabase
+        .from('inventory_transactions')
+        .insert({
+          store_id: currentStore.id,
+          user_id: user.id,
+          product_id: selectedProduct,
+          type: movementType,
+          quantity: qty,
+          previous_stock: product.stock,
+          new_stock: newStock,
+          reference_type: reference || null,
+          notes: notes || null,
+        });
 
-    toast({
-      title: "تم تحديث المخزون",
-      description: `${product.name}: ${product.stock} → ${newStock}`,
-    });
+      // Add movement record locally
+      const movement: StockMovement = {
+        id: Date.now().toString(),
+        productId: selectedProduct,
+        productName: product.name,
+        type: movementType,
+        quantity: qty,
+        previousStock: product.stock,
+        newStock,
+        reference,
+        notes,
+        userId: user.id,
+        createdAt: new Date(),
+      };
+      setMovements([movement, ...movements]);
 
-    // Reset form
-    setSelectedProduct("");
-    setQuantity("");
-    setReference("");
-    setNotes("");
-    setIsDialogOpen(false);
+      await refreshProducts();
+
+      toast({
+        title: "تم تحديث المخزون",
+        description: `${product.name}: ${product.stock} → ${newStock}`,
+      });
+
+      // Reset form
+      setSelectedProduct("");
+      setQuantity("");
+      setReference("");
+      setNotes("");
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error('Error updating stock:', error);
+      toast({
+        title: "خطأ",
+        description: "حدث خطأ أثناء تحديث المخزون",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getCategoryName = (categoryId: string | null) => {
+    if (!categoryId) return '-';
+    const category = categories.find(c => c.id === categoryId);
+    return category?.name || '-';
   };
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.barcode.includes(searchTerm);
+      (p.barcode || '').includes(searchTerm);
     
     if (filterStock === 'low') {
       return matchesSearch && p.stock <= p.minStock && p.stock > 0;
@@ -404,8 +413,8 @@ const Inventory = () => {
                   {filteredProducts.map((product) => (
                     <TableRow key={product.id}>
                       <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell className="font-mono text-sm">{product.barcode}</TableCell>
-                      <TableCell>{product.category}</TableCell>
+                      <TableCell className="font-mono text-sm">{product.barcode || '-'}</TableCell>
+                      <TableCell>{getCategoryName(product.category_id)}</TableCell>
                       <TableCell>
                         <span className={
                           product.stock === 0 ? "text-red-500 font-bold" :
@@ -458,35 +467,42 @@ const Inventory = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {movements.map((movement) => (
-                    <TableRow key={movement.id}>
-                      <TableCell>
-                        {movement.createdAt.toLocaleDateString('ar-SA')}
-                      </TableCell>
-                      <TableCell className="font-medium">{movement.productName}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getMovementIcon(movement.type)}
-                          {getMovementLabel(movement.type)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className={
-                          movement.type === 'in' ? "text-green-500" : 
-                          movement.type === 'out' ? "text-red-500" : ""
-                        }>
-                          {movement.type === 'in' ? '+' : movement.type === 'out' ? '-' : ''}
-                          {movement.quantity}
-                        </span>
-                      </TableCell>
-                      <TableCell>{movement.previousStock}</TableCell>
-                      <TableCell>{movement.newStock}</TableCell>
-                      <TableCell>{movement.reference || "-"}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {movement.notes || "-"}
+                  {movements.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Package className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-muted-foreground">لا توجد حركات مخزون</p>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    movements.map((movement) => (
+                      <TableRow key={movement.id}>
+                        <TableCell>
+                          {movement.createdAt.toLocaleDateString('ar-SA')}
+                        </TableCell>
+                        <TableCell className="font-medium">{movement.productName}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getMovementIcon(movement.type)}
+                            {getMovementLabel(movement.type)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={
+                            movement.type === 'in' ? "text-green-500" : 
+                            movement.type === 'out' ? "text-red-500" : ""
+                          }>
+                            {movement.type === 'in' ? '+' : movement.type === 'out' ? '-' : ''}
+                            {movement.quantity}
+                          </span>
+                        </TableCell>
+                        <TableCell>{movement.previousStock}</TableCell>
+                        <TableCell>{movement.newStock}</TableCell>
+                        <TableCell>{movement.reference || '-'}</TableCell>
+                        <TableCell>{movement.notes || '-'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

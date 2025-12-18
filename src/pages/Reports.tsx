@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, Shift } from '@/contexts/AppContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -75,7 +75,7 @@ const paymentMethodsData = [
 ];
 
 export default function Reports() {
-  const { settings } = useApp();
+  const { settings, currentShift } = useApp();
   const [period, setPeriod] = useState('daily');
   const [activeTab, setActiveTab] = useState('overview');
   const [showPrintDialog, setShowPrintDialog] = useState(false);
@@ -87,6 +87,27 @@ export default function Reports() {
   const totalSales = salesData.reduce((sum, item) => sum + item.sales, 0);
   const totalOrders = salesData.reduce((sum, item) => sum + item.orders, 0);
   const avgOrderValue = totalSales / totalOrders;
+
+  // Create a report shift that matches the Shift type
+  const reportShift: Shift | undefined = currentShift ? currentShift : {
+    id: '1',
+    user_id: '1',
+    store_id: '1',
+    started_at: new Date(new Date().setHours(8, 0, 0, 0)).toISOString(),
+    closed_at: null,
+    opening_balance: 500,
+    closing_balance: null,
+    expected_balance: null,
+    difference: null,
+    total_sales: 13200,
+    total_expenses: 1850,
+    cash_sales: 8500,
+    card_sales: 3200,
+    other_sales: 1500,
+    transactions_count: 87,
+    status: 'open',
+    notes: null,
+  };
 
   // Daily report data
   const dailyReportData = {
@@ -100,20 +121,7 @@ export default function Reports() {
     ordersCount: 87,
     productsCount: 312,
     avgOrderValue: 151.72,
-    shift: {
-      id: '1',
-      userId: '1',
-      userName: 'أحمد محمد',
-      startTime: new Date(new Date().setHours(8, 0, 0, 0)),
-      openingBalance: 500,
-      totalSales: 13200,
-      totalExpenses: 1850,
-      cashSales: 8500,
-      cardSales: 3200,
-      otherSales: 1500,
-      transactionsCount: 87,
-      status: 'open' as const,
-    },
+    shift: reportShift,
   };
 
   const handlePrint = (type: 'thermal' | 'a4') => {
@@ -185,9 +193,7 @@ export default function Reports() {
                 .text-orange-600 { color: #ea580c; }
                 .bg-gray-50 { background-color: #f9fafb; }
                 table { border-collapse: collapse; }
-                @media print {
-                  body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-                }
+                @media print { body { -webkit-print-color-adjust: exact; } }
               </style>
             </head>
             <body>${printContents}</body>
@@ -456,13 +462,7 @@ export default function Reports() {
                         {item.value} {settings.currency}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        (
-                        {(
-                          (item.value /
-                            paymentMethodsData.reduce((sum, i) => sum + i.value, 0)) *
-                          100
-                        ).toFixed(1)}
-                        %)
+                        ({((item.value / paymentMethodsData.reduce((s, i) => s + i.value, 0)) * 100).toFixed(1)}%)
                       </span>
                     </div>
                   ))}
@@ -474,75 +474,67 @@ export default function Reports() {
 
         {/* Daily Report Tab */}
         <TabsContent value="daily-report" className="space-y-6">
-          {/* Print Buttons */}
-          <div className="flex gap-2 justify-end">
-            <Button onClick={() => handlePrint('thermal')} variant="outline">
-              <Receipt className="ml-2 h-4 w-4" />
-              طباعة إيصال
-            </Button>
-            <Button onClick={() => handlePrint('a4')}>
-              <FileText className="ml-2 h-4 w-4" />
-              طباعة A4
-            </Button>
-          </div>
-
-          {/* Daily Stats */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="border-primary/20 bg-primary/5">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-primary/10">
-                    <DollarSign className="h-6 w-6 text-primary" />
-                  </div>
+          {/* Quick Stats */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <DollarSign className="h-8 w-8 text-primary" />
                   <div>
-                    <p className="text-sm text-muted-foreground">إجمالي المبيعات</p>
-                    <p className="text-2xl font-bold">
+                    <p className="text-xs text-muted-foreground">إجمالي المبيعات</p>
+                    <p className="text-xl font-bold">
                       {dailyReportData.totalSales.toLocaleString()} {settings.currency}
                     </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="border-green-500/20 bg-green-500/5">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-green-500/10">
-                    <TrendingUp className="h-6 w-6 text-green-500" />
-                  </div>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Banknote className="h-8 w-8 text-success" />
                   <div>
-                    <p className="text-sm text-muted-foreground">صافي الإيراد</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {dailyReportData.netRevenue.toLocaleString()} {settings.currency}
+                    <p className="text-xs text-muted-foreground">كاش</p>
+                    <p className="text-xl font-bold">
+                      {dailyReportData.cashSales.toLocaleString()} {settings.currency}
                     </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
             <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-muted">
-                    <ShoppingCart className="h-6 w-6 text-muted-foreground" />
-                  </div>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <CreditCard className="h-8 w-8 text-primary" />
                   <div>
-                    <p className="text-sm text-muted-foreground">عدد الطلبات</p>
-                    <p className="text-2xl font-bold">{dailyReportData.ordersCount}</p>
+                    <p className="text-xs text-muted-foreground">بنكك</p>
+                    <p className="text-xl font-bold">
+                      {dailyReportData.bankSales.toLocaleString()} {settings.currency}
+                    </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="border-red-500/20 bg-red-500/5">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-red-500/10">
-                    <MinusCircle className="h-6 w-6 text-red-500" />
-                  </div>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Wallet className="h-8 w-8 text-secondary-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">المصروفات</p>
-                    <p className="text-2xl font-bold text-red-600">
+                    <p className="text-xs text-muted-foreground">فوري</p>
+                    <p className="text-xl font-bold">
+                      {dailyReportData.fawrySales.toLocaleString()} {settings.currency}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-destructive/5 border-destructive/20">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <MinusCircle className="h-8 w-8 text-destructive" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">المصروفات</p>
+                    <p className="text-xl font-bold">
                       {dailyReportData.totalExpenses.toLocaleString()} {settings.currency}
                     </p>
                   </div>
@@ -551,65 +543,39 @@ export default function Reports() {
             </Card>
           </div>
 
-          {/* Payment Methods & Shift Info */}
+          {/* Report Details */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Payment Methods Breakdown */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5" />
-                  طرق الدفع
+                  <Receipt className="h-5 w-5" />
+                  ملخص اليوم
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <div className="flex items-center gap-3">
-                    <Banknote className="h-5 w-5 text-green-600" />
-                    <span className="font-medium">كاش</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="font-bold text-green-600">
-                      {dailyReportData.cashSales.toLocaleString()} {settings.currency}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {((dailyReportData.cashSales / dailyReportData.totalSales) * 100).toFixed(1)}%
-                    </div>
-                  </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span>عدد الطلبات</span>
+                  <span className="font-bold">{dailyReportData.ordersCount}</span>
                 </div>
-
-                <div className="flex items-center justify-between p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                  <div className="flex items-center gap-3">
-                    <CreditCard className="h-5 w-5 text-blue-600" />
-                    <span className="font-medium">بنكك</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="font-bold text-blue-600">
-                      {dailyReportData.bankSales.toLocaleString()} {settings.currency}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {((dailyReportData.bankSales / dailyReportData.totalSales) * 100).toFixed(1)}%
-                    </div>
-                  </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span>المنتجات المباعة</span>
+                  <span className="font-bold">{dailyReportData.productsCount}</span>
                 </div>
-
-                <div className="flex items-center justify-between p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                  <div className="flex items-center gap-3">
-                    <Receipt className="h-5 w-5 text-purple-600" />
-                    <span className="font-medium">فوري</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="font-bold text-purple-600">
-                      {dailyReportData.fawrySales.toLocaleString()} {settings.currency}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {((dailyReportData.fawrySales / dailyReportData.totalSales) * 100).toFixed(1)}%
-                    </div>
-                  </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span>متوسط قيمة الطلب</span>
+                  <span className="font-bold">
+                    {dailyReportData.avgOrderValue.toFixed(2)} {settings.currency}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-2 text-lg font-bold">
+                  <span>صافي الإيراد</span>
+                  <span className="text-primary">
+                    {dailyReportData.netRevenue.toLocaleString()} {settings.currency}
+                  </span>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Shift Information */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -618,78 +584,51 @@ export default function Reports() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <User className="h-4 w-4" />
-                      الكاشير
+                {dailyReportData.shift && (
+                  <>
+                    <div className="flex justify-between border-b pb-2">
+                      <span>بداية الوردية</span>
+                      <span className="font-bold">
+                        {format(new Date(dailyReportData.shift.started_at), 'HH:mm', { locale: ar })}
+                      </span>
                     </div>
-                    <div className="font-bold">{dailyReportData.shift.userName}</div>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Clock className="h-4 w-4" />
-                      بداية الوردية
+                    <div className="flex justify-between border-b pb-2">
+                      <span>رصيد الافتتاح</span>
+                      <span className="font-bold">
+                        {dailyReportData.shift.opening_balance} {settings.currency}
+                      </span>
                     </div>
-                    <div className="font-bold">
-                      {format(dailyReportData.shift.startTime, 'HH:mm', { locale: ar })}
+                    <div className="flex justify-between border-b pb-2">
+                      <span>عدد المعاملات</span>
+                      <span className="font-bold">{dailyReportData.shift.transactions_count}</span>
                     </div>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-muted/50">
-                    <div className="text-sm text-muted-foreground mb-1">رصيد الافتتاح</div>
-                    <div className="font-bold">
-                      {dailyReportData.shift.openingBalance} {settings.currency}
+                    <div className="flex justify-between pt-2 text-lg font-bold">
+                      <span>الحالة</span>
+                      <span className="text-success">
+                        {dailyReportData.shift.status === 'open' ? 'مفتوحة' : 'مغلقة'}
+                      </span>
                     </div>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-muted/50">
-                    <div className="text-sm text-muted-foreground mb-1">عدد المعاملات</div>
-                    <div className="font-bold">{dailyReportData.shift.transactionsCount}</div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <div className="text-sm text-muted-foreground mb-1">الرصيد المتوقع</div>
-                  <div className="text-xl font-bold text-primary">
-                    {(
-                      dailyReportData.shift.openingBalance +
-                      dailyReportData.cashSales -
-                      dailyReportData.totalExpenses
-                    ).toLocaleString()}{' '}
-                    {settings.currency}
-                  </div>
-                </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Financial Summary */}
+          {/* Print Options */}
           <Card>
             <CardHeader>
-              <CardTitle>الملخص المالي</CardTitle>
+              <CardTitle>طباعة التقرير</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between py-3 border-b">
-                  <span className="text-muted-foreground">إجمالي المبيعات</span>
-                  <span className="font-bold text-lg text-green-600">
-                    +{dailyReportData.totalSales.toLocaleString()} {settings.currency}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-3 border-b">
-                  <span className="text-muted-foreground">المصروفات</span>
-                  <span className="font-bold text-lg text-red-600">
-                    -{dailyReportData.totalExpenses.toLocaleString()} {settings.currency}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-3 bg-primary/5 rounded-lg px-4">
-                  <span className="font-bold text-lg">صافي الإيراد</span>
-                  <span className="font-bold text-2xl text-primary">
-                    {dailyReportData.netRevenue.toLocaleString()} {settings.currency}
-                  </span>
-                </div>
+              <div className="flex flex-wrap gap-4">
+                <Button onClick={() => handlePrint('thermal')} className="gap-2">
+                  <Printer className="h-4 w-4" />
+                  طباعة حرارية (80mm)
+                </Button>
+                <Button variant="outline" onClick={() => handlePrint('a4')} className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  طباعة A4
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -698,11 +637,11 @@ export default function Reports() {
 
       {/* Print Dialog */}
       <Dialog open={showPrintDialog} onOpenChange={setShowPrintDialog}>
-        <DialogContent className={printType === 'a4' ? 'max-w-4xl max-h-[90vh] overflow-auto' : 'max-w-sm'}>
+        <DialogContent className="max-w-[90vw] max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>معاينة الطباعة</DialogTitle>
           </DialogHeader>
-          <div className="flex justify-center overflow-auto">
+          <div className="flex justify-center p-4 bg-muted rounded-lg overflow-auto">
             <DailyReportPrint
               ref={printRef}
               data={dailyReportData}
@@ -710,9 +649,9 @@ export default function Reports() {
               type={printType}
             />
           </div>
-          <div className="flex gap-2 justify-end mt-4">
+          <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowPrintDialog(false)}>
-              إلغاء
+              إغلاق
             </Button>
             <Button onClick={executePrint}>
               <Printer className="ml-2 h-4 w-4" />

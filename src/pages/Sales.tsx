@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { Invoice, CartItem } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,23 +19,48 @@ import {
   DollarSign,
   ShoppingCart,
   Eye,
-  Download,
-  BarChart3,
   PieChart
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
+interface SaleInvoice {
+  id: string;
+  invoiceNumber: string;
+  shiftId: string;
+  userId: string;
+  items: Array<{
+    id: string;
+    name: string;
+    price: number;
+    cost: number;
+    quantity: number;
+    discount: number;
+    total: number;
+    categoryName?: string;
+  }>;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  paymentMethod: string;
+  transactionId?: string;
+  amountPaid: number;
+  change: number;
+  status: 'completed' | 'cancelled' | 'refunded';
+  createdAt: Date;
+}
+
 // Sample invoices data
-const sampleInvoices: Invoice[] = [
+const sampleInvoices: SaleInvoice[] = [
   {
     id: '1',
     invoiceNumber: 'INV-001',
     shiftId: '1',
     userId: '1',
     items: [
-      { id: '1', name: 'حليب المراعي طازج 1 لتر', barcode: '6281007012345', code: 'P001', price: 6.5, cost: 5.0, stock: 50, minStock: 10, category: 'منتجات الألبان', unit: 'قطعة', isWeighted: false, createdAt: new Date(), updatedAt: new Date(), quantity: 2, discount: 0, total: 13 },
-      { id: '3', name: 'بيبسي 330 مل', barcode: '6281007012347', code: 'P003', price: 2.5, cost: 1.8, stock: 100, minStock: 20, category: 'مشروبات', unit: 'قطعة', isWeighted: false, createdAt: new Date(), updatedAt: new Date(), quantity: 3, discount: 0, total: 7.5 },
+      { id: '1', name: 'حليب المراعي طازج 1 لتر', price: 6.5, cost: 5.0, quantity: 2, discount: 0, total: 13, categoryName: 'منتجات الألبان' },
+      { id: '3', name: 'بيبسي 330 مل', price: 2.5, cost: 1.8, quantity: 3, discount: 0, total: 7.5, categoryName: 'مشروبات' },
     ],
     subtotal: 20.5,
     discount: 0,
@@ -54,7 +78,7 @@ const sampleInvoices: Invoice[] = [
     shiftId: '1',
     userId: '1',
     items: [
-      { id: '4', name: 'تفاح أحمر', barcode: '6281007012348', code: 'P004', price: 8.0, cost: 5.5, stock: 25, minStock: 5, category: 'خضروات وفواكه', unit: 'كيلو', isWeighted: true, createdAt: new Date(), updatedAt: new Date(), quantity: 1.5, discount: 0, total: 12 },
+      { id: '4', name: 'تفاح أحمر', price: 8.0, cost: 5.5, quantity: 1.5, discount: 0, total: 12, categoryName: 'خضروات وفواكه' },
     ],
     subtotal: 12,
     discount: 0,
@@ -73,8 +97,8 @@ const sampleInvoices: Invoice[] = [
     shiftId: '1',
     userId: '1',
     items: [
-      { id: '5', name: 'دجاج طازج', barcode: '6281007012349', code: 'P005', price: 18.0, cost: 14.0, stock: 15, minStock: 5, category: 'لحوم ودواجن', unit: 'كيلو', isWeighted: true, createdAt: new Date(), updatedAt: new Date(), quantity: 2, discount: 0, total: 36 },
-      { id: '2', name: 'خبز أبيض', barcode: '6281007012346', code: 'P002', price: 3.0, cost: 2.0, stock: 30, minStock: 5, category: 'مخبوزات', unit: 'قطعة', isWeighted: false, createdAt: new Date(), updatedAt: new Date(), quantity: 2, discount: 0, total: 6 },
+      { id: '5', name: 'دجاج طازج', price: 18.0, cost: 14.0, quantity: 2, discount: 0, total: 36, categoryName: 'لحوم ودواجن' },
+      { id: '2', name: 'خبز أبيض', price: 3.0, cost: 2.0, quantity: 2, discount: 0, total: 6, categoryName: 'مخبوزات' },
     ],
     subtotal: 42,
     discount: 2,
@@ -91,15 +115,14 @@ const sampleInvoices: Invoice[] = [
 
 export default function Sales() {
   const { settings, categories } = useApp();
-  const [invoices] = useState<Invoice[]>(sampleInvoices);
+  const [invoices] = useState<SaleInvoice[]>(sampleInvoices);
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const reportRef = useRef<HTMLDivElement>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<SaleInvoice | null>(null);
 
   // Filter invoices
   const filteredInvoices = useMemo(() => {
@@ -113,7 +136,7 @@ export default function Sales() {
       
       let matchesCategory = categoryFilter === 'all';
       if (!matchesCategory) {
-        matchesCategory = invoice.items.some(item => item.category === categoryFilter);
+        matchesCategory = invoice.items.some(item => item.categoryName === categoryFilter);
       }
 
       return matchesSearch && matchesPayment && matchesStatus && matchesDateFrom && matchesDateTo && matchesCategory;
@@ -140,12 +163,13 @@ export default function Sales() {
     
     filteredInvoices.forEach(invoice => {
       invoice.items.forEach(item => {
-        if (!categoryMap[item.category]) {
-          categoryMap[item.category] = { sales: 0, quantity: 0, cost: 0 };
+        const catName = item.categoryName || 'غير مصنف';
+        if (!categoryMap[catName]) {
+          categoryMap[catName] = { sales: 0, quantity: 0, cost: 0 };
         }
-        categoryMap[item.category].sales += item.total;
-        categoryMap[item.category].quantity += item.quantity;
-        categoryMap[item.category].cost += item.cost * item.quantity;
+        categoryMap[catName].sales += item.total;
+        categoryMap[catName].quantity += item.quantity;
+        categoryMap[catName].cost += item.cost * item.quantity;
       });
     });
 
@@ -424,11 +448,11 @@ export default function Sales() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-green-500/20 to-green-500/5 border-green-500/20">
+          <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-500/20">
-                  <TrendingUp className="w-5 h-5 text-green-500" />
+                <div className="p-2 rounded-lg bg-success/20">
+                  <TrendingUp className="w-5 h-5 text-success" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">صافي الربح</p>
@@ -437,11 +461,11 @@ export default function Sales() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20">
+          <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/20">
-                  <FileText className="w-5 h-5 text-blue-500" />
+                <div className="p-2 rounded-lg bg-secondary/20">
+                  <ShoppingCart className="w-5 h-5 text-secondary-foreground" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">عدد الفواتير</p>
@@ -450,41 +474,28 @@ export default function Sales() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-orange-500/20">
+          <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-500/20">
-                  <Package className="w-5 h-5 text-orange-500" />
+                <div className="p-2 rounded-lg bg-secondary/20">
+                  <Package className="w-5 h-5 text-secondary-foreground" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">الأصناف المباعة</p>
-                  <p className="text-lg font-bold">{stats.totalItems.toFixed(0)}</p>
+                  <p className="text-xs text-muted-foreground">المنتجات المباعة</p>
+                  <p className="text-lg font-bold">{stats.totalItems}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/20">
+          <Card className="col-span-2">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-500/20">
-                  <ShoppingCart className="w-5 h-5 text-purple-500" />
+                <div className="p-2 rounded-lg bg-secondary/20">
+                  <DollarSign className="w-5 h-5 text-secondary-foreground" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">متوسط الطلب</p>
+                  <p className="text-xs text-muted-foreground">متوسط قيمة الفاتورة</p>
                   <p className="text-lg font-bold">{stats.avgOrderValue.toFixed(2)} {settings.currency}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 border-cyan-500/20">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-500/20">
-                  <BarChart3 className="w-5 h-5 text-cyan-500" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">نسبة الربح</p>
-                  <p className="text-lg font-bold">{stats.totalSales > 0 ? ((stats.netProfit / stats.totalSales) * 100).toFixed(1) : 0}%</p>
                 </div>
               </div>
             </CardContent>
@@ -494,271 +505,179 @@ export default function Sales() {
         {/* Filters */}
         <Card>
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-              <div className="relative md:col-span-2">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <div className="flex flex-wrap gap-4">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="بحث برقم الفاتورة أو المنتج..."
+                  placeholder="بحث..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pr-10"
                 />
               </div>
               <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="طريقة الدفع" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">جميع طرق الدفع</SelectItem>
+                  <SelectItem value="all">الكل</SelectItem>
                   <SelectItem value="كاش">كاش</SelectItem>
                   <SelectItem value="بنكك">بنكك</SelectItem>
                   <SelectItem value="فوري">فوري</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="الصنف" />
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="الحالة" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">جميع الأصناف</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
-                  ))}
+                  <SelectItem value="all">الكل</SelectItem>
+                  <SelectItem value="completed">مكتملة</SelectItem>
+                  <SelectItem value="cancelled">ملغية</SelectItem>
+                  <SelectItem value="refunded">مستردة</SelectItem>
                 </SelectContent>
               </Select>
               <Input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                placeholder="من تاريخ"
+                className="w-[150px]"
               />
               <Input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                placeholder="إلى تاريخ"
+                className="w-[150px]"
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* Tabs */}
-        <Tabs defaultValue="invoices" className="space-y-4">
-          <TabsList className="bg-secondary/50">
-            <TabsTrigger value="invoices">الفواتير</TabsTrigger>
-            <TabsTrigger value="categories">حسب الأصناف</TabsTrigger>
-            <TabsTrigger value="products">حسب المنتجات</TabsTrigger>
-            <TabsTrigger value="payments">حسب طرق الدفع</TabsTrigger>
-          </TabsList>
+        {/* Invoices Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle>الفواتير</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>رقم الفاتورة</TableHead>
+                  <TableHead>التاريخ</TableHead>
+                  <TableHead>عدد الأصناف</TableHead>
+                  <TableHead>طريقة الدفع</TableHead>
+                  <TableHead>الإجمالي</TableHead>
+                  <TableHead>الحالة</TableHead>
+                  <TableHead>الإجراءات</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredInvoices.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-muted-foreground">لا توجد فواتير</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredInvoices.map((invoice) => (
+                    <TableRow key={invoice.id}>
+                      <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
+                      <TableCell>{format(new Date(invoice.createdAt), 'dd/MM/yyyy HH:mm', { locale: ar })}</TableCell>
+                      <TableCell>{invoice.items.length}</TableCell>
+                      <TableCell>
+                        {invoice.paymentMethod}
+                        {invoice.transactionId && (
+                          <span className="text-xs text-muted-foreground block">{invoice.transactionId}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{invoice.total.toFixed(2)} {settings.currency}</TableCell>
+                      <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => setSelectedInvoice(invoice)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-          {/* Invoices Tab */}
-          <TabsContent value="invoices">
-            <Card>
-              <CardContent className="p-0">
+        {/* Invoice Details Dialog */}
+        <Dialog open={!!selectedInvoice} onOpenChange={() => setSelectedInvoice(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>تفاصيل الفاتورة {selectedInvoice?.invoiceNumber}</DialogTitle>
+            </DialogHeader>
+            {selectedInvoice && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">التاريخ</p>
+                    <p className="font-medium">{format(new Date(selectedInvoice.createdAt), 'dd/MM/yyyy HH:mm', { locale: ar })}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">طريقة الدفع</p>
+                    <p className="font-medium">{selectedInvoice.paymentMethod}</p>
+                  </div>
+                </div>
+
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-right">رقم الفاتورة</TableHead>
-                      <TableHead className="text-right">التاريخ</TableHead>
-                      <TableHead className="text-right">عدد الأصناف</TableHead>
-                      <TableHead className="text-right">طريقة الدفع</TableHead>
-                      <TableHead className="text-right">الحالة</TableHead>
-                      <TableHead className="text-right">الإجمالي</TableHead>
-                      <TableHead className="text-right">الإجراءات</TableHead>
+                      <TableHead>المنتج</TableHead>
+                      <TableHead>الكمية</TableHead>
+                      <TableHead>السعر</TableHead>
+                      <TableHead>الإجمالي</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredInvoices.map((invoice) => (
-                      <TableRow key={invoice.id}>
-                        <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{format(new Date(invoice.createdAt), 'yyyy/MM/dd HH:mm')}</TableCell>
-                        <TableCell>{invoice.items.length}</TableCell>
-                        <TableCell>
-                          {invoice.paymentMethod}
-                          {invoice.transactionId && (
-                            <span className="text-xs text-muted-foreground mr-1">
-                              ({invoice.transactionId})
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                        <TableCell className="font-bold">{invoice.total.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => setSelectedInvoice(invoice)}
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-lg">
-                              <DialogHeader>
-                                <DialogTitle>تفاصيل الفاتورة {invoice.invoiceNumber}</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <p className="text-muted-foreground">التاريخ</p>
-                                    <p>{format(new Date(invoice.createdAt), 'yyyy/MM/dd HH:mm')}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">طريقة الدفع</p>
-                                    <p>{invoice.paymentMethod}</p>
-                                  </div>
-                                  {invoice.transactionId && (
-                                    <div className="col-span-2">
-                                      <p className="text-muted-foreground">رقم العملية</p>
-                                      <p>{invoice.transactionId}</p>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="border rounded-lg overflow-hidden">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead className="text-right">المنتج</TableHead>
-                                        <TableHead className="text-right">الكمية</TableHead>
-                                        <TableHead className="text-right">السعر</TableHead>
-                                        <TableHead className="text-right">الإجمالي</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {invoice.items.map((item, idx) => (
-                                        <TableRow key={idx}>
-                                          <TableCell>{item.name}</TableCell>
-                                          <TableCell>{item.quantity}</TableCell>
-                                          <TableCell>{item.price.toFixed(2)}</TableCell>
-                                          <TableCell>{item.total.toFixed(2)}</TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                                <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between">
-                                    <span>المجموع الفرعي</span>
-                                    <span>{invoice.subtotal.toFixed(2)} {settings.currency}</span>
-                                  </div>
-                                  {invoice.discount > 0 && (
-                                    <div className="flex justify-between text-red-500">
-                                      <span>الخصم</span>
-                                      <span>-{invoice.discount.toFixed(2)} {settings.currency}</span>
-                                    </div>
-                                  )}
-                                  {invoice.tax > 0 && (
-                                    <div className="flex justify-between">
-                                      <span>الضريبة</span>
-                                      <span>{invoice.tax.toFixed(2)} {settings.currency}</span>
-                                    </div>
-                                  )}
-                                  <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                                    <span>الإجمالي</span>
-                                    <span>{invoice.total.toFixed(2)} {settings.currency}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        </TableCell>
+                    {selectedInvoice.items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{item.name}</TableCell>
+                        <TableCell>{item.quantity}</TableCell>
+                        <TableCell>{item.price.toFixed(2)} {settings.currency}</TableCell>
+                        <TableCell>{item.total.toFixed(2)} {settings.currency}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
-          {/* Categories Tab */}
-          <TabsContent value="categories">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">الصنف</TableHead>
-                      <TableHead className="text-right">الكمية المباعة</TableHead>
-                      <TableHead className="text-right">إجمالي المبيعات</TableHead>
-                      <TableHead className="text-right">صافي الربح</TableHead>
-                      <TableHead className="text-right">نسبة الربح</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {salesByCategory.map((cat, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">{cat.category}</TableCell>
-                        <TableCell>{cat.quantity}</TableCell>
-                        <TableCell>{cat.sales.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell className="text-green-500">{cat.profit.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell>{cat.sales > 0 ? ((cat.profit / cat.sales) * 100).toFixed(1) : 0}%</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Products Tab */}
-          <TabsContent value="products">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">المنتج</TableHead>
-                      <TableHead className="text-right">الكمية المباعة</TableHead>
-                      <TableHead className="text-right">إجمالي المبيعات</TableHead>
-                      <TableHead className="text-right">صافي الربح</TableHead>
-                      <TableHead className="text-right">نسبة الربح</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {salesByProduct.map((prod, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">{prod.name}</TableCell>
-                        <TableCell>{prod.quantity}</TableCell>
-                        <TableCell>{prod.sales.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell className="text-green-500">{prod.profit.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell>{prod.sales > 0 ? ((prod.profit / prod.sales) * 100).toFixed(1) : 0}%</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Payments Tab */}
-          <TabsContent value="payments">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">طريقة الدفع</TableHead>
-                      <TableHead className="text-right">عدد العمليات</TableHead>
-                      <TableHead className="text-right">إجمالي المبيعات</TableHead>
-                      <TableHead className="text-right">النسبة من الإجمالي</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {salesByPayment.map((pay, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">{pay.method}</TableCell>
-                        <TableCell>{pay.count}</TableCell>
-                        <TableCell>{pay.total.toFixed(2)} {settings.currency}</TableCell>
-                        <TableCell>{stats.totalSales > 0 ? ((pay.total / stats.totalSales) * 100).toFixed(1) : 0}%</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                <div className="border-t pt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span>المجموع الفرعي:</span>
+                    <span>{selectedInvoice.subtotal.toFixed(2)} {settings.currency}</span>
+                  </div>
+                  {selectedInvoice.discount > 0 && (
+                    <div className="flex justify-between">
+                      <span>الخصم:</span>
+                      <span>-{selectedInvoice.discount.toFixed(2)} {settings.currency}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>الضريبة:</span>
+                    <span>{selectedInvoice.tax.toFixed(2)} {settings.currency}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>الإجمالي:</span>
+                    <span>{selectedInvoice.total.toFixed(2)} {settings.currency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>المدفوع:</span>
+                    <span>{selectedInvoice.amountPaid.toFixed(2)} {settings.currency}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>الباقي:</span>
+                    <span>{selectedInvoice.change.toFixed(2)} {settings.currency}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }
