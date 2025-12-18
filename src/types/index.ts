@@ -1,67 +1,22 @@
-export interface Product {
+// Re-export types from AppContext for backward compatibility
+export type { Product, Category, PaymentMethod, Shift, Expense, StoreSettings } from '@/contexts/AppContext';
+
+// Cart item extends the database Product with cart-specific fields
+export interface CartItem {
   id: string;
   name: string;
-  barcode: string;
-  code: string;
+  barcode: string | null;
   price: number;
   cost: number;
   stock: number;
   minStock: number;
-  category: string;
+  category_id: string | null;
+  categoryName?: string;
   unit: string;
-  isWeighted: boolean;
-  image?: string;
-  productionDate?: Date;
-  expiryDate?: Date;
-  scaleBarcode?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Expense {
-  id: string;
-  amount: number;
-  category: string;
-  description: string;
-  reference?: string;
-  shiftId?: string;
-  userId: string;
-  createdAt: Date;
-}
-
-export interface CartItem extends Product {
+  is_weighted: boolean;
   quantity: number;
   discount: number;
   total: number;
-}
-
-export interface PaymentMethod {
-  id: string;
-  name: string;
-  nameEn: string;
-  icon: string;
-  isActive: boolean;
-  requiresTransactionId: boolean;
-}
-
-export interface Shift {
-  id: string;
-  userId: string;
-  userName: string;
-  startTime: Date;
-  endTime?: Date;
-  openingBalance: number;
-  closingBalance?: number;
-  expectedBalance?: number;
-  difference?: number;
-  totalSales: number;
-  totalExpenses: number;
-  cashSales: number;
-  cardSales: number;
-  otherSales: number;
-  transactionsCount: number;
-  status: 'open' | 'closed';
-  notes?: string;
 }
 
 export interface Invoice {
@@ -88,30 +43,11 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'cashier' | 'manager';
+  role: 'admin' | 'cashier' | 'manager' | 'owner';
   permissions: string[];
   isActive: boolean;
   avatar?: string;
   createdAt: Date;
-}
-
-export interface StoreSettings {
-  name: string;
-  nameEn: string;
-  logo?: string;
-  address: string;
-  phone: string;
-  email: string;
-  taxNumber?: string;
-  currency: string;
-  taxRate: number;
-  language: 'ar' | 'en';
-  receiptHeader?: string;
-  receiptFooter?: string;
-  enableTax: boolean;
-  enableDiscounts: boolean;
-  enableCustomerInfo: boolean;
-  lowStockThreshold: number;
 }
 
 export interface ActivityLog {
@@ -130,14 +66,4 @@ export interface DashboardStats {
   todayRevenue: number;
   todayExpenses: number;
   lowStockItems: number;
-  activeShift?: Shift;
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  nameEn: string;
-  icon: string;
-  color: string;
-  productsCount: number;
 }

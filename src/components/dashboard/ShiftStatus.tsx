@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, Play, Square, DollarSign } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Dialog,
   DialogContent,
@@ -14,60 +15,32 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
 
 export function ShiftStatus() {
-  const { currentShift, setCurrentShift, currentUser } = useApp();
+  const { currentShift, openShift, closeShift, settings } = useApp();
+  const { profile } = useAuth();
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [openingBalance, setOpeningBalance] = useState('');
   const [closingBalance, setClosingBalance] = useState('');
 
-  const handleOpenShift = () => {
+  const handleOpenShift = async () => {
     const balance = parseFloat(openingBalance) || 0;
-    const newShift = {
-      id: Date.now().toString(),
-      userId: currentUser?.id || '1',
-      userName: currentUser?.name || 'مستخدم',
-      startTime: new Date(),
-      openingBalance: balance,
-      totalSales: 0,
-      totalExpenses: 0,
-      cashSales: 0,
-      cardSales: 0,
-      otherSales: 0,
-      transactionsCount: 0,
-      status: 'open' as const,
-    };
-    setCurrentShift(newShift);
+    await openShift(balance);
     setShowOpenDialog(false);
     setOpeningBalance('');
-    toast.success('تم فتح الوردية بنجاح');
   };
 
-  const handleCloseShift = () => {
+  const handleCloseShift = async () => {
     if (!currentShift) return;
-    
     const closing = parseFloat(closingBalance) || 0;
-    const expected = currentShift.openingBalance + currentShift.cashSales - currentShift.totalExpenses;
-    const difference = closing - expected;
-
-    setCurrentShift({
-      ...currentShift,
-      endTime: new Date(),
-      closingBalance: closing,
-      expectedBalance: expected,
-      difference,
-      status: 'closed',
-    });
+    await closeShift(closing);
     setShowCloseDialog(false);
     setClosingBalance('');
-    toast.success('تم إغلاق الوردية بنجاح');
-    setTimeout(() => setCurrentShift(null), 2000);
   };
 
-  const formatDuration = (start: Date) => {
-    const diff = new Date().getTime() - start.getTime();
+  const formatDuration = (start: string) => {
+    const diff = new Date().getTime() - new Date(start).getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours} ساعة و ${minutes} دقيقة`;
@@ -92,23 +65,23 @@ export function ShiftStatus() {
                 <div className="rounded-lg bg-muted p-3 text-center">
                   <p className="text-xs text-muted-foreground">رصيد البداية</p>
                   <p className="text-lg font-bold text-foreground">
-                    {currentShift.openingBalance} ر.س
+                    {currentShift.opening_balance} {settings.currency}
                   </p>
                 </div>
                 <div className="rounded-lg bg-primary/10 p-3 text-center">
                   <p className="text-xs text-muted-foreground">المبيعات</p>
                   <p className="text-lg font-bold text-primary">
-                    {currentShift.totalSales} ر.س
+                    {currentShift.total_sales} {settings.currency}
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">مدة الوردية:</span>
-                <span className="font-medium">{formatDuration(currentShift.startTime)}</span>
+                <span className="font-medium">{formatDuration(currentShift.started_at)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">عدد العمليات:</span>
-                <span className="font-medium">{currentShift.transactionsCount}</span>
+                <span className="font-medium">{currentShift.transactions_count}</span>
               </div>
               <Button
                 variant="destructive"
@@ -147,7 +120,7 @@ export function ShiftStatus() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="opening">رصيد البداية (ر.س)</Label>
+              <Label htmlFor="opening">رصيد البداية ({settings.currency})</Label>
               <div className="relative">
                 <DollarSign className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -184,26 +157,26 @@ export function ShiftStatus() {
               <div className="rounded-lg bg-muted p-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>رصيد البداية:</span>
-                  <span className="font-medium">{currentShift.openingBalance} ر.س</span>
+                  <span className="font-medium">{currentShift.opening_balance} {settings.currency}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>إجمالي المبيعات:</span>
-                  <span className="font-medium text-success">{currentShift.totalSales} ر.س</span>
+                  <span className="font-medium text-success">{currentShift.total_sales} {settings.currency}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>المصروفات:</span>
-                  <span className="font-medium text-destructive">{currentShift.totalExpenses} ر.س</span>
+                  <span className="font-medium text-destructive">{currentShift.total_expenses} {settings.currency}</span>
                 </div>
                 <div className="border-t pt-2 flex justify-between text-sm font-bold">
                   <span>الرصيد المتوقع:</span>
                   <span>
-                    {currentShift.openingBalance + currentShift.cashSales - currentShift.totalExpenses} ر.س
+                    {currentShift.opening_balance + currentShift.cash_sales - currentShift.total_expenses} {settings.currency}
                   </span>
                 </div>
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="closing">رصيد الإغلاق الفعلي (ر.س)</Label>
+              <Label htmlFor="closing">رصيد الإغلاق الفعلي ({settings.currency})</Label>
               <div className="relative">
                 <DollarSign className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input

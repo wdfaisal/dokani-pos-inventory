@@ -1,9 +1,12 @@
+import { useState, useEffect } from 'react';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { RevenueChart } from '@/components/dashboard/RevenueChart';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { LowStockAlert } from '@/components/dashboard/LowStockAlert';
 import { ShiftStatus } from '@/components/dashboard/ShiftStatus';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import {
   DollarSign,
   ShoppingCart,
@@ -13,23 +16,85 @@ import {
   Receipt,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useState } from 'react';
 
 export default function Dashboard() {
   const { settings, products } = useApp();
+  const { currentStore } = useAuth();
   const [period, setPeriod] = useState('daily');
+  const [stats, setStats] = useState({
+    totalSales: 0,
+    totalOrders: 0,
+    revenue: 0,
+    expenses: 0,
+    customers: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
   const lowStockCount = products.filter((p) => p.stock <= p.minStock).length;
 
-  // Sample data - in production, this would come from the database
-  const stats = {
-    totalSales: 15420,
-    totalOrders: 87,
-    revenue: 12350,
-    expenses: 3070,
-    customers: 45,
-    invoices: 87,
-  };
+  useEffect(() => {
+    if (!currentStore) return;
+
+    const fetchStats = async () => {
+      setLoading(true);
+      
+      // Calculate date range based on period
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (period) {
+        case 'weekly':
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'monthly':
+          startDate = new Date(now);
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        default: // daily
+          startDate = new Date(now);
+          startDate.setHours(0, 0, 0, 0);
+      }
+
+      // Fetch sales stats
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select('total, subtotal, discount')
+        .eq('store_id', currentStore.id)
+        .eq('status', 'completed')
+        .gte('created_at', startDate.toISOString());
+
+      // Fetch expenses
+      const { data: expensesData } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('store_id', currentStore.id)
+        .gte('created_at', startDate.toISOString());
+
+      // Calculate stats
+      const totalSales = salesData?.reduce((sum, s) => sum + Number(s.total), 0) || 0;
+      const totalOrders = salesData?.length || 0;
+      const totalSubtotal = salesData?.reduce((sum, s) => sum + Number(s.subtotal), 0) || 0;
+      const totalDiscount = salesData?.reduce((sum, s) => sum + Number(s.discount), 0) || 0;
+      const totalExpenses = expensesData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+
+      // Revenue = Sales - Cost of goods (approximated as 70% of subtotal) - Expenses
+      const estimatedCost = totalSubtotal * 0.7;
+      const revenue = totalSales - estimatedCost - totalExpenses;
+
+      setStats({
+        totalSales,
+        totalOrders,
+        revenue: Math.max(0, revenue),
+        expenses: totalExpenses,
+        customers: totalOrders, // Using orders as proxy for customers
+      });
+
+      setLoading(false);
+    };
+
+    fetchStats();
+  }, [currentStore, period]);
 
   return (
     <div className="space-y-6">

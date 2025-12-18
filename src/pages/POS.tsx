@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useApp } from '@/contexts/AppContext';
-import { CartItem, Product, PaymentMethod, Expense } from '@/types';
+import { useApp, Product, PaymentMethod } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,13 +40,18 @@ import {
   Receipt,
   ShoppingCart,
   X,
-  Barcode,
   Printer,
   DollarSign,
   ScanLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThermalReceipt } from '@/components/receipt/ThermalReceipt';
+
+interface CartItem extends Product {
+  quantity: number;
+  discount: number;
+  total: number;
+}
 
 const expenseCategories = ['رواتب', 'إيجار', 'كهرباء', 'ماء', 'مشتريات', 'صيانة', 'نقل', 'متفرقات'];
 
@@ -57,12 +62,12 @@ export default function POS() {
     paymentMethods,
     settings,
     currentShift,
-    setCurrentShift,
     isFullscreen,
     setIsFullscreen,
-    expenses,
-    setExpenses,
+    addExpense,
+    createSale,
   } = useApp();
+  const { user } = useAuth();
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,7 +97,7 @@ export default function POS() {
 
   // Barcode scanner handler
   const handleBarcodeSubmit = useCallback((barcode: string) => {
-    const product = products.find(p => p.barcode === barcode || p.scaleBarcode === barcode);
+    const product = products.find(p => p.barcode === barcode);
     if (product) {
       addToCart(product);
       setBarcodeInput('');
@@ -102,22 +107,20 @@ export default function POS() {
   }, [products]);
 
   // Handle expense save
-  const handleSaveExpense = () => {
+  const handleSaveExpense = async () => {
     if (!expenseForm.amount || !expenseForm.category) {
       toast.error('يرجى ملء الحقول المطلوبة');
       return;
     }
-    const expense: Expense = {
-      id: Date.now().toString(),
+    
+    await addExpense({
       amount: parseFloat(expenseForm.amount),
       category: expenseForm.category,
-      description: expenseForm.description,
-      shiftId: currentShift?.id,
-      userId: '1',
-      createdAt: new Date(),
-    };
-    setExpenses(prev => [expense, ...prev]);
-    toast.success('تم إضافة المصروف');
+      description: expenseForm.description || null,
+      reference: null,
+      shift_id: currentShift?.id || null,
+    });
+    
     setShowExpenseDialog(false);
     setExpenseForm({ amount: '', category: '', description: '' });
   };
@@ -132,9 +135,9 @@ export default function POS() {
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.name.includes(searchQuery) ||
-      product.barcode.includes(searchQuery) ||
-      product.code.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = !selectedCategory || product.category === selectedCategory;
+      (product.barcode?.includes(searchQuery) ?? false) ||
+      (product.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    const matchesCategory = !selectedCategory || product.categoryName === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -223,11 +226,11 @@ export default function POS() {
   };
 
   // Process payment
-  const processPayment = () => {
+  const processPayment = async () => {
     const method = paymentMethods.find((m) => m.id === selectedPaymentMethod);
     if (!method) return;
 
-    if (method.requiresTransactionId && !transactionId) {
+    if (method.requires_reference && !transactionId) {
       toast.error('يرجى إدخال رقم العملية');
       return;
     }
@@ -239,49 +242,54 @@ export default function POS() {
     }
 
     const change = paid - total;
-    const invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
 
-    // Save invoice data for receipt
-    setLastInvoice({
-      items: [...cart],
+    // Create sale in database
+    const result = await createSale({
+      items: cart.map(item => ({
+        product_id: item.id,
+        product_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        discount: item.discount,
+        total: item.total,
+      })),
       subtotal,
       discount,
       tax,
       total,
-      paymentMethod: method,
-      transactionId,
-      invoiceNumber,
+      paid_amount: paid,
+      change_amount: change,
+      payment_method_id: method.id,
+      payment_reference: transactionId || undefined,
     });
 
-    // Update shift
-    if (currentShift) {
-      setCurrentShift({
-        ...currentShift,
-        totalSales: currentShift.totalSales + total,
-        cashSales:
-          currentShift.cashSales + (method.name === 'كاش' ? total : 0),
-        cardSales:
-          currentShift.cardSales + (method.name === 'بنكك' ? total : 0),
-        otherSales:
-          currentShift.otherSales +
-          (method.name !== 'كاش' && method.name !== 'بنكك' ? total : 0),
-        transactionsCount: currentShift.transactionsCount + 1,
+    if (result) {
+      // Save invoice data for receipt
+      setLastInvoice({
+        items: [...cart],
+        subtotal,
+        discount,
+        tax,
+        total,
+        paymentMethod: method,
+        transactionId,
+        invoiceNumber: result.invoice_number,
       });
+
+      toast.success(
+        `تم إتمام عملية البيع - ${change > 0 ? `الباقي: ${change.toFixed(2)} ${settings.currency}` : ''}`
+      );
+
+      // Show receipt dialog
+      setShowReceipt(true);
+
+      // Reset
+      setCart([]);
+      setShowPaymentDialog(false);
+      setSelectedPaymentMethod('');
+      setTransactionId('');
+      setAmountPaid('');
     }
-
-    toast.success(
-      `تم إتمام عملية البيع - ${change > 0 ? `الباقي: ${change.toFixed(2)} ${settings.currency}` : ''}`
-    );
-
-    // Show receipt dialog
-    setShowReceipt(true);
-
-    // Reset
-    setCart([]);
-    setShowPaymentDialog(false);
-    setSelectedPaymentMethod('');
-    setTransactionId('');
-    setAmountPaid('');
   };
 
   // Print receipt
@@ -339,7 +347,7 @@ export default function POS() {
   };
 
   // Get payment method icon
-  const getPaymentIcon = (iconName: string) => {
+  const getPaymentIcon = (iconName: string | null) => {
     switch (iconName) {
       case 'Banknote':
         return Banknote;
@@ -496,7 +504,7 @@ export default function POS() {
                   <div className="space-y-2">
                     <div className="flex items-start justify-between">
                       <Badge variant="secondary" className="text-xs">
-                        {product.category}
+                        {product.categoryName || 'غير مصنف'}
                       </Badge>
                       {product.stock <= product.minStock && (
                         <Badge variant="destructive" className="text-[10px]">
@@ -514,7 +522,7 @@ export default function POS() {
                     </h3>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">
-                        {product.code}
+                        {product.sku || product.barcode || '-'}
                       </span>
                       <span
                         className={cn(
@@ -682,7 +690,7 @@ export default function POS() {
               <Label>طريقة الدفع</Label>
               <div className="grid grid-cols-3 gap-2">
                 {paymentMethods
-                  .filter((m) => m.isActive)
+                  .filter((m) => m.is_active)
                   .map((method) => {
                     const Icon = getPaymentIcon(method.icon);
                     return (
@@ -707,7 +715,7 @@ export default function POS() {
             {/* Transaction ID */}
             {selectedPaymentMethod &&
               paymentMethods.find((m) => m.id === selectedPaymentMethod)
-                ?.requiresTransactionId && (
+                ?.requires_reference && (
                 <div className="space-y-2">
                   <Label htmlFor="transactionId">رقم العملية</Label>
                   <Input
@@ -768,13 +776,13 @@ export default function POS() {
             <div className="border rounded-lg overflow-hidden">
               <ThermalReceipt
                 ref={receiptRef}
-                items={lastInvoice.items}
+                items={lastInvoice.items as any}
                 subtotal={lastInvoice.subtotal}
                 discount={lastInvoice.discount}
                 tax={lastInvoice.tax}
                 total={lastInvoice.total}
                 settings={settings}
-                paymentMethod={lastInvoice.paymentMethod}
+                paymentMethod={lastInvoice.paymentMethod as any}
                 transactionId={lastInvoice.transactionId}
                 invoiceNumber={lastInvoice.invoiceNumber}
               />

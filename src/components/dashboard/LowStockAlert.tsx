@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
 export function LowStockAlert() {
-  const { products, settings } = useApp();
+  const { products } = useApp();
 
   const lowStockProducts = products.filter(
     (p) => p.stock <= p.minStock
@@ -62,7 +62,7 @@ export function LowStockAlert() {
                 <div>
                   <p className="text-sm font-medium">{product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    الكود: {product.code}
+                    الكود: {product.sku || product.barcode || '-'}
                   </p>
                 </div>
               </div>
